@@ -1,0 +1,17 @@
+# Optional Postgres — not required for the SQLite default demo.
+# Usage: docker compose up -d postgres
+# Then set DATABASE_URL=postgresql+psycopg2://cyberfield:cyberfield@localhost:5432/cyberfield
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cyberfield
+      POSTGRES_PASSWORD: cyberfield
+      POSTGRES_DB: cyberfield
+    ports:
+      - "5432:5432"
+    volumes:
+      - cyberfield_pg:/var/lib/postgresql/data
+
+volumes:
+  cyberfield_pg:
