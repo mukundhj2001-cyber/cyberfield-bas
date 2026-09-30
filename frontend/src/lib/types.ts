@@ -138,3 +138,30 @@ export type QuoteRunResponse = {
   agent_trace: Array<Record<string, unknown>>
   llm_mode: string
 }
+
+export type GmailStatus = {
+  mode: string
+  connected: boolean
+  label: string
+  detail: string
+  oauth_configured: boolean
+}
+
+export type GmailSyncResponse = {
+  mode: string
+  imported: number
+  skipped: number
+  emails: Email[]
+  status: GmailStatus
+  warning?: string | null
+}
+
+export type WebhookInfo = {
+  email_path: string
+  trigger_quote_path: string
+  secret_required: boolean
+  secret_header: string
+  sample_email_payload: Record<string, unknown>
+  sample_trigger_payload: Record<string, unknown>
+  notes: string
+}

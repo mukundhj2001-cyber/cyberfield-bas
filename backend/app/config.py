@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     company_name: str = "Northwind Industrial"
     brand_name: str = "Cyberfield BAS"
 
+    # Gmail — leave unset for mock sync (default)
+    gmail_mode: str = "mock"  # mock | oauth
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_refresh_token: str | None = None
+
+    # n8n webhooks — when set, require X-Webhook-Secret header
+    n8n_webhook_secret: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

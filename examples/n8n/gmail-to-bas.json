@@ -1,0 +1,60 @@
+{
+  "name": "Gmail → Cyberfield BAS (quote inbox)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "simple": true,
+        "filters": {}
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "notes": "Connect your Gmail credential in n8n. For demos without Gmail, use Manual Trigger + Set node instead."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/webhooks/n8n/email",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET || 'change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from_address\": \"{{ $json.from || $json.From || 'unknown@example.com' }}\",\n  \"from_name\": \"{{ $json.fromName || '' }}\",\n  \"subject\": \"{{ $json.subject || $json.Subject || '(no subject)' }}\",\n  \"body\": \"{{ $json.text || $json.snippet || $json.body || '' }}\",\n  \"message_id\": \"{{ $json.id || $json.messageId || '' }}\",\n  \"run_quote_workflow\": false\n}",
+        "options": {}
+      },
+      "id": "http-bas",
+      "name": "POST Cyberfield BAS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "notes": "If BAS runs on the host and n8n in Docker, use host.docker.internal. Local n8n: http://localhost:8000/webhooks/n8n/email. Set run_quote_workflow true to auto-start the quote agent."
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "POST Cyberfield BAS", "type": "main", "index": 0 }]]
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "cyberfield-bas-demo"
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "cyberfield-bas" }],
+  "pinData": {}
+}

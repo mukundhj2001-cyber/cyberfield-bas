@@ -1,4 +1,5 @@
-import { Bot, Shield, Database, Mail } from 'lucide-react'
+import { Bot, Shield, Database, Mail, Webhook } from 'lucide-react'
+import { Badge } from '../components/Badge'
 
 const agents = [
   {
@@ -20,10 +21,16 @@ const agents = [
     icon: Database,
   },
   {
-    name: 'Inbox Adapter',
+    name: 'Gmail Ingest',
     status: 'mock',
-    desc: 'v1 uses seeded mock mailbox — Gmail/Outlook connectors planned later.',
+    desc: 'Sync button pulls mock Gmail-like messages by default. Optional Google OAuth when credentials are set.',
     icon: Mail,
+  },
+  {
+    name: 'n8n Webhooks',
+    status: 'active',
+    desc: 'POST /webhooks/n8n/email and /trigger-quote for external orchestration (optional shared secret).',
+    icon: Webhook,
   },
 ]
 
@@ -31,29 +38,27 @@ export function Agents() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold text-white">AI Agents</h1>
+        <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-cyan-500/80">
+          Autonomy layer
+        </div>
+        <h1 className="mt-1 text-xl font-semibold text-white">AI Agents</h1>
         <p className="mt-1 text-sm text-slate-400">
           Autonomous workers with human approval — not a chatbot
         </p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {agents.map((a) => (
-          <div
-            key={a.name}
-            className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5"
-          >
+          <div key={a.name} className="ops-panel rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-slate-800 p-2.5 text-cyan-300">
+              <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 text-cyan-300">
                 <a.icon className="h-4 w-4" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-semibold text-white">{a.name}</h2>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                    {a.status}
-                  </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold text-white">{a.name}</h2>
+                  <Badge status={a.status} />
                 </div>
-                <p className="mt-2 text-sm text-slate-400">{a.desc}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{a.desc}</p>
               </div>
             </div>
           </div>

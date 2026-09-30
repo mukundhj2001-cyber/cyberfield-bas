@@ -1,29 +1,49 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, Mail } from 'lucide-react'
+import { Play, Mail, RefreshCw, Link2 } from 'lucide-react'
 import { api } from '../api/client'
-import type { Email } from '../lib/types'
+import type { Email, GmailStatus } from '../lib/types'
 import { Badge } from '../components/Badge'
+import { EmptyState } from '../components/EmptyState'
 
 export function Emails() {
   const [emails, setEmails] = useState<Email[]>([])
   const [selected, setSelected] = useState<Email | null>(null)
+  const [gmail, setGmail] = useState<GmailStatus | null>(null)
   const [running, setRunning] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
 
-  const load = () =>
-    api
-      .emails()
-      .then((rows) => {
-        setEmails(rows)
-        setSelected((prev) => rows.find((e) => e.id === prev?.id) || rows[0] || null)
-      })
-      .catch((e: Error) => setError(e.message))
+  const load = async () => {
+    const [rows, status] = await Promise.all([api.emails(), api.gmailStatus()])
+    setEmails(rows)
+    setGmail(status)
+    setSelected((prev) => rows.find((e) => e.id === prev?.id) || rows[0] || null)
+  }
 
   useEffect(() => {
-    load()
+    load().catch((e: Error) => setError(e.message))
   }, [])
+
+  const syncInbox = async () => {
+    setSyncing(true)
+    setError(null)
+    setSyncMsg(null)
+    try {
+      const result = await api.syncInbox()
+      await load()
+      const warn = result.warning ? ` · ${result.warning}` : ''
+      setSyncMsg(
+        `Synced (${result.mode}): imported ${result.imported}, skipped ${result.skipped}${warn}`,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const runQuote = async () => {
     if (!selected) return
@@ -42,84 +62,132 @@ export function Emails() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Inbox</h1>
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-cyan-500/80">
+            Communications
+          </div>
+          <h1 className="mt-1 text-xl font-semibold text-white">Inbox</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Mock inbound mailbox for Northwind Industrial (no Gmail in v1)
+            Northwind Industrial mailbox · Gmail sync + n8n ingest
           </p>
         </div>
-        <button
-          type="button"
-          disabled={!selected || running}
-          onClick={runQuote}
-          className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3.5 py-2 text-sm font-medium text-slate-950 disabled:opacity-50 hover:bg-cyan-400"
-        >
-          <Play className="h-4 w-4" />
-          {running ? 'Running…' : 'Run quote workflow'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {gmail ? (
+            <span
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium',
+                gmail.connected
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+              ].join(' ')}
+              title={gmail.detail}
+            >
+              <Link2 className="h-3 w-3" />
+              {gmail.label}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={syncInbox}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-100 hover:border-slate-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing…' : 'Sync Gmail'}
+          </button>
+          <button
+            type="button"
+            disabled={!selected || running}
+            onClick={runQuote}
+            className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-medium text-slate-950 disabled:opacity-50 hover:bg-cyan-400"
+          >
+            <Play className="h-3.5 w-3.5" />
+            {running ? 'Running…' : 'Run quote workflow'}
+          </button>
+        </div>
       </div>
 
+      {syncMsg ? (
+        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+          {syncMsg}
+        </div>
+      ) : null}
+
       {error ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
           {error}
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40 lg:col-span-2">
-          <ul className="divide-y divide-slate-800">
-            {emails.map((email) => (
-              <li key={email.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelected(email)}
-                  className={[
-                    'w-full px-4 py-3 text-left transition',
-                    selected?.id === email.id ? 'bg-cyan-500/10' : 'hover:bg-slate-900',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-medium text-slate-100">
-                      {email.from_name || email.from_address}
+      <div className="grid gap-3 lg:grid-cols-5">
+        <div className="ops-panel overflow-hidden rounded-xl lg:col-span-2">
+          {emails.length === 0 ? (
+            <EmptyState
+              title="Inbox empty"
+              description="Click Sync Gmail to pull mock messages, or POST via n8n webhook."
+              icon={Mail}
+            />
+          ) : (
+            <ul className="divide-y divide-slate-800/80">
+              {emails.map((email) => (
+                <li key={email.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(email)}
+                    className={[
+                      'w-full px-3.5 py-2.5 text-left transition',
+                      selected?.id === email.id
+                        ? 'bg-cyan-500/10'
+                        : 'hover:bg-slate-900/70',
+                    ].join(' ')}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate text-[13px] font-medium text-slate-100">
+                        {email.from_name || email.from_address}
+                      </div>
+                      <Badge status={email.status} />
                     </div>
-                    <Badge status={email.status} />
-                  </div>
-                  <div className="mt-1 truncate text-sm text-slate-300">{email.subject}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {new Date(email.received_at).toLocaleString()}
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                    <div className="mt-0.5 truncate text-[13px] text-slate-300">{email.subject}</div>
+                    <div className="mt-1 text-[10px] tabular-nums text-slate-500">
+                      {new Date(email.received_at).toLocaleString()}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 lg:col-span-3">
+        <div className="ops-panel rounded-xl p-4 lg:col-span-3">
           {selected ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-slate-800 p-2.5 text-cyan-300">
+                <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 text-cyan-300">
                   <Mail className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-white">{selected.subject}</h2>
-                  <p className="mt-1 text-sm text-slate-400">
+                  <h2 className="text-base font-semibold text-white">{selected.subject}</h2>
+                  <p className="mt-1 text-xs text-slate-400">
                     From {selected.from_name} &lt;{selected.from_address}&gt;
+                  </p>
+                  <p className="mt-0.5 font-mono text-[10px] text-slate-600">
+                    {selected.message_id}
                   </p>
                 </div>
               </div>
-              <pre className="whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm leading-relaxed text-slate-300">
+              <pre className="whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/70 p-3.5 text-[13px] leading-relaxed text-slate-300">
                 {selected.body}
               </pre>
               {selected.intent ? (
-                <div className="text-xs text-slate-500">
-                  Last intent: <span className="font-mono text-cyan-300">{selected.intent}</span>
+                <div className="text-[11px] text-slate-500">
+                  Last intent:{' '}
+                  <span className="font-mono text-cyan-300">{selected.intent}</span>
                 </div>
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Select an email</p>
+            <EmptyState title="Select an email" description="Choose a message from the list." />
           )}
         </div>
       </div>

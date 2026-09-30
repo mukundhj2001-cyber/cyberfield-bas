@@ -124,3 +124,52 @@ class DashboardStats(BaseModel):
     products: int
     recent_activity: list[ActivityOut] = Field(default_factory=list)
     llm_mode: str
+
+
+class GmailStatusOut(BaseModel):
+    mode: str
+    connected: bool
+    label: str
+    detail: str
+    oauth_configured: bool = False
+
+
+class GmailSyncResponse(BaseModel):
+    mode: str
+    imported: int
+    skipped: int
+    emails: list[EmailOut] = Field(default_factory=list)
+    status: GmailStatusOut
+    warning: Optional[str] = None
+
+
+class N8nEmailWebhook(BaseModel):
+    from_address: str
+    subject: str
+    body: str
+    from_name: Optional[str] = ""
+    to_address: Optional[str] = "quotes@northwind-industrial.example"
+    message_id: Optional[str] = None
+    run_quote_workflow: bool = False
+
+
+class N8nTriggerQuote(BaseModel):
+    email_id: Optional[int] = None
+    message_id: Optional[str] = None
+
+
+class N8nEmailWebhookResponse(BaseModel):
+    email_id: int
+    message_id: str
+    status: str
+    workflow: Optional[QuoteRunResponse] = None
+
+
+class WebhookInfoOut(BaseModel):
+    email_path: str
+    trigger_quote_path: str
+    secret_required: bool
+    secret_header: str
+    sample_email_payload: dict[str, Any]
+    sample_trigger_payload: dict[str, Any]
+    notes: str

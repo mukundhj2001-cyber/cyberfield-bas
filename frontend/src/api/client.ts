@@ -4,9 +4,12 @@ import type {
   DashboardStats,
   Deal,
   Email,
+  GmailStatus,
+  GmailSyncResponse,
   Product,
   QuoteRunResponse,
   Task,
+  WebhookInfo,
 } from '../lib/types'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -24,10 +27,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string; llm_mode: string; brand: string }>('/health'),
+  health: () =>
+    request<{
+      status: string
+      llm_mode: string
+      brand: string
+      gmail_mode?: string
+      n8n_secret_required?: boolean
+    }>('/health'),
   stats: () => request<DashboardStats>('/dashboard/stats'),
   emails: () => request<Email[]>('/emails'),
   email: (id: number) => request<Email>(`/emails/${id}`),
+  gmailStatus: () => request<GmailStatus>('/inbox/gmail/status'),
+  syncInbox: () =>
+    request<GmailSyncResponse>('/inbox/sync', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  webhookInfo: () => request<WebhookInfo>('/webhooks/n8n/info'),
   runQuote: (body: { email_id?: number; message_id?: string } = {}) =>
     request<QuoteRunResponse>('/workflows/quote/run', {
       method: 'POST',
@@ -60,3 +77,5 @@ export const api = {
   tasks: (status?: string) =>
     request<Task[]>(`/tasks${status ? `?status=${status}` : ''}`),
 }
+
+export const apiBase = BASE
