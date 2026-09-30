@@ -84,7 +84,7 @@ def main() -> int:
             qs = urllib.parse.parse_qs(parsed.query)
             if "error" in qs:
                 code_holder["error"] = qs["error"][0]
-                body = b"OAuth error — you can close this tab."
+                body = b"OAuth error - you can close this tab."
             else:
                 code_holder["code"] = qs.get("code", [""])[0]
                 body = b"Authorization received. You can close this tab and return to the terminal."
