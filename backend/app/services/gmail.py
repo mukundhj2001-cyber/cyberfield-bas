@@ -2,14 +2,17 @@
 
 Mock mode injects demo Gmail-like messages into the inbox so the portfolio demo
 works offline without secrets. Real mode uses a refresh token + client credentials
-to list recent inbox messages via Gmail API.
+to list recent inbox messages via Gmail API (messages.list + messages.get).
+
+OAuth setup (no secrets committed): see README "Gmail OAuth" and
+scripts/gmail_oauth_refresh_token.py.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from uuid import uuid4
@@ -19,25 +22,32 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import ActivityLog, Email
+from app.services.attention import apply_attention, catalog_prices, recompute_all
 
 logger = logging.getLogger(__name__)
 
+GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+
 # Pool of demo messages that "arrive" on each mock sync (message_id must be stable
-# so repeated syncs are idempotent).
+# so repeated syncs are idempotent). Content is varied for attention ranking demos.
+_MOCK_NOW = datetime.now(timezone.utc)
+
 MOCK_GMAIL_POOL: list[dict[str, Any]] = [
     {
         "message_id": "gmail-mock-004-pump-rfq",
         "from_address": "buyer@riverbend-plants.example",
         "from_name": "Jordan Blake",
-        "subject": "Urgent RFQ — Centrifugal Process Pump C2 × 2",
+        "subject": "URGENT RFQ — Centrifugal Process Pump C2 × 2 — ASAP",
         "body": (
             "Hello Northwind,\n\n"
-            "Please quote:\n"
+            "URGENT — production halted. Please quote ASAP:\n"
             "- 2 × Centrifugal Process Pump C2 (NW-PMP-C2)\n"
             "- 4 × Mechanical Seal Rebuild Kit (NW-SEAL-KIT)\n\n"
-            "Need delivery to Riverbend Plants, Cleveland OH within 3 weeks.\n\n"
+            "Need delivery to Riverbend Plants, Cleveland OH within 3 weeks.\n"
+            "This is time-sensitive — escalate if needed.\n\n"
             "Jordan Blake\nPurchasing"
         ),
+        "received_at": _MOCK_NOW - timedelta(hours=1),
     },
     {
         "message_id": "gmail-mock-005-idler-rfq",
@@ -50,6 +60,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
             "Also include unit price for NW-BRG-6205 bearings (qty 50) as optional add-on.\n\n"
             "Thanks,\nSam Ortiz\nCoastal Aggregates"
         ),
+        "received_at": _MOCK_NOW - timedelta(hours=8),
     },
     {
         "message_id": "gmail-mock-006-vfd-followup",
@@ -62,6 +73,32 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
             "for our second packaging line?\n\n"
             "Marcus Chen\nSummit Packaging LLC"
         ),
+        "received_at": _MOCK_NOW - timedelta(hours=12),
+    },
+    {
+        "message_id": "gmail-mock-007-escalation",
+        "from_address": "vp.ops@midwest-steel.example",
+        "from_name": "Dana Okonkwo",
+        "subject": "Escalation: overdue quote on NW-MTR-3HP — CEO reviewing suppliers",
+        "body": (
+            "Northwind,\n\n"
+            "This is an escalation / final notice. We requested a quote two weeks ago for\n"
+            "12 × NW-MTR-3HP motors (~$8,200). Our CEO is reviewing suppliers Friday.\n"
+            "Please respond urgently or we will cancel the RFQ.\n\n"
+            "Dana Okonkwo\nVP Operations — Midwest Steel"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=4),
+    },
+    {
+        "message_id": "gmail-mock-008-low-noise",
+        "from_address": "noreply@parts-partner.example",
+        "from_name": "Parts Partner",
+        "subject": "Your monthly account statement is ready",
+        "body": (
+            "Hi,\n\nYour statement for last month is attached in the portal.\n"
+            "No reply needed.\n\n— Parts Partner Billing"
+        ),
+        "received_at": _MOCK_NOW - timedelta(days=3),
     },
 ]
 
@@ -73,23 +110,39 @@ def gmail_connection_status() -> dict[str, Any]:
         and settings.google_client_secret
         and settings.google_refresh_token
     )
-    mode = "oauth" if (settings.gmail_mode == "oauth" and real_ready) else "mock"
-    if settings.gmail_mode == "oauth" and not real_ready:
-        mode = "mock"
-        reason = "oauth requested but GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN incomplete — using mock"
-    else:
+    requested = (settings.gmail_mode or "mock").strip().lower()
+    if requested == "oauth" and real_ready:
+        mode = "oauth"
         reason = None
+        detail = "Live Gmail API via refresh token (messages.list + get)"
+    elif requested == "oauth" and not real_ready:
+        mode = "mock"
+        reason = (
+            "GMAIL_MODE=oauth but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / "
+            "GOOGLE_REFRESH_TOKEN incomplete — using mock"
+        )
+        detail = reason
+    else:
+        mode = "mock"
+        reason = None
+        detail = "Demo sync injects seeded Gmail-like messages (no secrets required)"
+
     return {
         "mode": mode,
         "connected": mode == "oauth",
-        "label": "Gmail OAuth" if mode == "oauth" else "Mock Gmail",
-        "detail": reason
-        or (
-            "Live Gmail API via refresh token"
-            if mode == "oauth"
-            else "Demo sync injects seeded Gmail-like messages (no secrets required)"
-        ),
+        "label": "Connected" if mode == "oauth" else "Mock",
+        "detail": detail,
         "oauth_configured": real_ready,
+        "requested_mode": requested,
+        "scope": GMAIL_READONLY_SCOPE,
+        "hint": (
+            None
+            if mode == "oauth"
+            else (
+                "Set GMAIL_MODE=oauth and Google OAuth credentials in backend/.env; "
+                "see README + scripts/gmail_oauth_refresh_token.py"
+            )
+        ),
     }
 
 
@@ -97,35 +150,56 @@ async def sync_inbox(db: Session) -> dict[str, Any]:
     status = gmail_connection_status()
     if status["mode"] == "oauth":
         try:
-            return await _sync_oauth(db)
+            result = await _sync_oauth(db)
         except Exception as exc:  # noqa: BLE001 — fall back so demos never brick
             logger.exception("Gmail OAuth sync failed; falling back to mock")
             result = _sync_mock(db)
             result["warning"] = f"OAuth sync failed ({exc}); used mock instead"
             result["mode"] = "mock"
-            return result
-    return _sync_mock(db)
+    else:
+        result = _sync_mock(db)
+
+    # Age-sensitive factors: refresh scores for the whole inbox after sync
+    scored = recompute_all(db)
+    result["attention_rescored"] = scored
+    result["status"] = gmail_connection_status()
+    # Refresh ORM instances after recompute
+    if result.get("emails"):
+        ids = [e.id for e in result["emails"]]
+        result["emails"] = db.query(Email).filter(Email.id.in_(ids)).all() if ids else []
+    return result
+
+
+def _persist_new_email(db: Session, *, fields: dict[str, Any], catalog: dict[str, float]) -> Email:
+    email = Email(**fields)
+    apply_attention(email, catalog=catalog)
+    db.add(email)
+    return email
 
 
 def _sync_mock(db: Session) -> dict[str, Any]:
     created: list[Email] = []
     skipped = 0
+    catalog = catalog_prices(db)
     for row in MOCK_GMAIL_POOL:
         existing = db.query(Email).filter(Email.message_id == row["message_id"]).first()
         if existing:
             skipped += 1
             continue
-        email = Email(
-            message_id=row["message_id"],
-            from_address=row["from_address"],
-            from_name=row["from_name"],
-            to_address="quotes@northwind-industrial.example",
-            subject=row["subject"],
-            body=row["body"],
-            received_at=datetime.now(timezone.utc),
-            status="unread",
+        email = _persist_new_email(
+            db,
+            fields={
+                "message_id": row["message_id"],
+                "from_address": row["from_address"],
+                "from_name": row["from_name"],
+                "to_address": "quotes@northwind-industrial.example",
+                "subject": row["subject"],
+                "body": row["body"],
+                "received_at": row.get("received_at") or datetime.now(timezone.utc),
+                "status": "unread",
+            },
+            catalog=catalog,
         )
-        db.add(email)
         created.append(email)
 
     if created:
@@ -169,9 +243,10 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
         settings.google_client_secret or "",
         settings.google_refresh_token or "",
     )
-    messages = await _list_gmail_messages(token, max_results=10)
+    messages = await _list_gmail_messages(token, max_results=25)
     created: list[Email] = []
     skipped = 0
+    catalog = catalog_prices(db)
     for msg in messages:
         mid = f"gmail-{msg['id']}"
         existing = db.query(Email).filter(Email.message_id == mid).first()
@@ -179,17 +254,20 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
             skipped += 1
             continue
         parsed = _parse_gmail_message(msg)
-        email = Email(
-            message_id=mid,
-            from_address=parsed["from_address"],
-            from_name=parsed["from_name"],
-            to_address=parsed["to_address"],
-            subject=parsed["subject"],
-            body=parsed["body"],
-            received_at=parsed["received_at"],
-            status="unread",
+        email = _persist_new_email(
+            db,
+            fields={
+                "message_id": mid,
+                "from_address": parsed["from_address"],
+                "from_name": parsed["from_name"],
+                "to_address": parsed["to_address"],
+                "subject": parsed["subject"],
+                "body": parsed["body"],
+                "received_at": parsed["received_at"],
+                "status": "unread",
+            },
+            catalog=catalog,
         )
-        db.add(email)
         created.append(email)
 
     db.add(
@@ -228,7 +306,7 @@ async def _refresh_access_token(client_id: str, client_secret: str, refresh_toke
         return data["access_token"]
 
 
-async def _list_gmail_messages(access_token: str, max_results: int = 10) -> list[dict[str, Any]]:
+async def _list_gmail_messages(access_token: str, max_results: int = 25) -> list[dict[str, Any]]:
     headers = {"Authorization": f"Bearer {access_token}"}
     async with httpx.AsyncClient(timeout=30.0) as client:
         listing = await client.get(
@@ -339,6 +417,7 @@ def ingest_external_email(
     if existing:
         return existing
 
+    catalog = catalog_prices(db)
     email = Email(
         message_id=mid,
         from_address=from_address,
@@ -349,12 +428,19 @@ def ingest_external_email(
         received_at=datetime.now(timezone.utc),
         status="unread",
     )
+    apply_attention(email, catalog=catalog)
     db.add(email)
     db.add(
         ActivityLog(
             kind="webhook_ingest",
             message=f"Ingested email via {source}: {subject[:80]}",
-            meta={"source": source, "from": from_address, "message_id": mid},
+            meta={
+                "source": source,
+                "from": from_address,
+                "message_id": mid,
+                "attention_score": email.attention_score,
+                "attention_label": email.attention_label,
+            },
         )
     )
     db.commit()

@@ -5,18 +5,22 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.llm import resolve_llm_mode
 from app.config import get_settings
-from app.database import Base, SessionLocal, engine
+from app.database import Base, SessionLocal, engine, ensure_schema
 from app.routers import approvals, crm, dashboard, emails, inbox, tasks, webhooks, workflows
 from app.seed import seed_if_empty
+from app.services.attention import recompute_all
 from app.services.gmail import gmail_connection_status
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema()
     db = SessionLocal()
     try:
         seed_if_empty(db)
+        # Ensure existing DBs (pre-ranking) get scores on boot
+        recompute_all(db)
     finally:
         db.close()
     yield
@@ -26,7 +30,7 @@ settings = get_settings()
 app = FastAPI(
     title="Cyberfield Business Automation System",
     description="Autonomous business operations agent — quote-from-email flagship workflow.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -58,5 +62,6 @@ def health():
         "company": settings.company_name,
         "llm_mode": resolve_llm_mode(),
         "gmail_mode": gmail["mode"],
+        "gmail_connected": gmail["connected"],
         "n8n_secret_required": bool(settings.n8n_webhook_secret),
     }

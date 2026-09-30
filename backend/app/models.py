@@ -21,6 +21,10 @@ class Email(Base):
     status: Mapped[str] = mapped_column(String(32), default="unread")  # unread|processing|quoted|ignored
     intent: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     extracted: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # Attention ranking — Critical / High / Medium / Low
+    attention_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    attention_label: Mapped[str] = mapped_column(String(32), default="Low", index=True)
+    attention_meta: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     approvals: Mapped[list["Approval"]] = relationship(back_populates="email")
 

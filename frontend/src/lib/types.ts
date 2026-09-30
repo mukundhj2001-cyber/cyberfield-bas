@@ -10,6 +10,13 @@ export type Email = {
   status: string
   intent?: string | null
   extracted?: Record<string, unknown> | null
+  attention_score?: number
+  attention_label?: string
+  attention_meta?: {
+    factors?: Record<string, number>
+    reasons?: string[]
+    estimated_value?: number
+  } | null
 }
 
 export type LineItem = {
@@ -145,6 +152,9 @@ export type GmailStatus = {
   label: string
   detail: string
   oauth_configured: boolean
+  requested_mode?: string | null
+  scope?: string | null
+  hint?: string | null
 }
 
 export type GmailSyncResponse = {
@@ -154,6 +164,7 @@ export type GmailSyncResponse = {
   emails: Email[]
   status: GmailStatus
   warning?: string | null
+  attention_rescored?: number
 }
 
 export type WebhookInfo = {

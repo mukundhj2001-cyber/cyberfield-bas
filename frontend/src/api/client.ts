@@ -36,7 +36,13 @@ export const api = {
       n8n_secret_required?: boolean
     }>('/health'),
   stats: () => request<DashboardStats>('/dashboard/stats'),
-  emails: () => request<Email[]>('/emails'),
+  emails: (opts?: { priority?: string; sort?: string }) => {
+    const params = new URLSearchParams()
+    if (opts?.priority) params.set('priority', opts.priority)
+    if (opts?.sort) params.set('sort', opts.sort)
+    const q = params.toString()
+    return request<Email[]>(`/emails${q ? `?${q}` : ''}`)
+  },
   email: (id: number) => request<Email>(`/emails/${id}`),
   gmailStatus: () => request<GmailStatus>('/inbox/gmail/status'),
   syncInbox: () =>

@@ -20,6 +20,9 @@ class EmailOut(OrmModel):
     status: str
     intent: Optional[str] = None
     extracted: Optional[dict[str, Any]] = None
+    attention_score: float = 0.0
+    attention_label: str = "Low"
+    attention_meta: Optional[dict[str, Any]] = None
 
 
 class ProductOut(OrmModel):
@@ -132,6 +135,9 @@ class GmailStatusOut(BaseModel):
     label: str
     detail: str
     oauth_configured: bool = False
+    requested_mode: Optional[str] = None
+    scope: Optional[str] = None
+    hint: Optional[str] = None
 
 
 class GmailSyncResponse(BaseModel):
@@ -141,6 +147,7 @@ class GmailSyncResponse(BaseModel):
     emails: list[EmailOut] = Field(default_factory=list)
     status: GmailStatusOut
     warning: Optional[str] = None
+    attention_rescored: int = 0
 
 
 class N8nEmailWebhook(BaseModel):

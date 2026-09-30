@@ -1,23 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, Mail, RefreshCw, Link2 } from 'lucide-react'
+import { Play, Mail, RefreshCw, Link2, Filter } from 'lucide-react'
 import { api } from '../api/client'
 import type { Email, GmailStatus } from '../lib/types'
 import { Badge } from '../components/Badge'
 import { EmptyState } from '../components/EmptyState'
 
+const PRIORITY_FILTERS = ['All', 'Critical', 'High', 'Medium', 'Low'] as const
+
 export function Emails() {
   const [emails, setEmails] = useState<Email[]>([])
   const [selected, setSelected] = useState<Email | null>(null)
   const [gmail, setGmail] = useState<GmailStatus | null>(null)
+  const [priority, setPriority] = useState<(typeof PRIORITY_FILTERS)[number]>('All')
   const [running, setRunning] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
 
-  const load = async () => {
-    const [rows, status] = await Promise.all([api.emails(), api.gmailStatus()])
+  const load = async (prio: (typeof PRIORITY_FILTERS)[number] = priority) => {
+    const [rows, status] = await Promise.all([
+      api.emails({
+        priority: prio === 'All' ? undefined : prio,
+        sort: 'attention',
+      }),
+      api.gmailStatus(),
+    ])
     setEmails(rows)
     setGmail(status)
     setSelected((prev) => rows.find((e) => e.id === prev?.id) || rows[0] || null)
@@ -25,7 +34,18 @@ export function Emails() {
 
   useEffect(() => {
     load().catch((e: Error) => setError(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const onPriorityChange = async (next: (typeof PRIORITY_FILTERS)[number]) => {
+    setPriority(next)
+    setError(null)
+    try {
+      await load(next)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   const syncInbox = async () => {
     setSyncing(true)
@@ -35,8 +55,10 @@ export function Emails() {
       const result = await api.syncInbox()
       await load()
       const warn = result.warning ? ` · ${result.warning}` : ''
+      const scored =
+        result.attention_rescored != null ? ` · rescored ${result.attention_rescored}` : ''
       setSyncMsg(
-        `Synced (${result.mode}): imported ${result.imported}, skipped ${result.skipped}${warn}`,
+        `Synced (${result.mode}): imported ${result.imported}, skipped ${result.skipped}${scored}${warn}`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -60,6 +82,15 @@ export function Emails() {
     }
   }
 
+  const counts = useMemo(() => {
+    const map: Record<string, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+    for (const e of emails) {
+      const label = e.attention_label || 'Low'
+      map[label] = (map[label] || 0) + 1
+    }
+    return map
+  }, [emails])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -69,7 +100,7 @@ export function Emails() {
           </div>
           <h1 className="mt-1 text-xl font-semibold text-white">Inbox</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Northwind Industrial mailbox · Gmail sync + n8n ingest
+            Ranked by attention · critical / time-sensitive mail first
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -84,7 +115,7 @@ export function Emails() {
               title={gmail.detail}
             >
               <Link2 className="h-3 w-3" />
-              {gmail.label}
+              {gmail.connected ? 'Connected' : 'Mock'}
             </span>
           ) : null}
           <button
@@ -106,6 +137,31 @@ export function Emails() {
             {running ? 'Running…' : 'Run quote workflow'}
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-500">
+          <Filter className="h-3 w-3" />
+          Priority
+        </span>
+        {PRIORITY_FILTERS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPriorityChange(p)}
+            className={[
+              'rounded-full border px-2.5 py-1 text-[10px] font-medium transition',
+              priority === p
+                ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200'
+                : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500',
+            ].join(' ')}
+          >
+            {p}
+            {p !== 'All' && counts[p] ? (
+              <span className="ml-1 tabular-nums text-slate-500">{counts[p]}</span>
+            ) : null}
+          </button>
+        ))}
       </div>
 
       {syncMsg ? (
@@ -146,11 +202,17 @@ export function Emails() {
                       <div className="truncate text-[13px] font-medium text-slate-100">
                         {email.from_name || email.from_address}
                       </div>
-                      <Badge status={email.status} />
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge status={email.attention_label || 'Low'} />
+                        <Badge status={email.status} />
+                      </div>
                     </div>
                     <div className="mt-0.5 truncate text-[13px] text-slate-300">{email.subject}</div>
-                    <div className="mt-1 text-[10px] tabular-nums text-slate-500">
-                      {new Date(email.received_at).toLocaleString()}
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] tabular-nums text-slate-500">
+                      <span>{new Date(email.received_at).toLocaleString()}</span>
+                      <span className="text-cyan-500/80">
+                        attn {(email.attention_score ?? 0).toFixed(0)}
+                      </span>
                     </div>
                   </button>
                 </li>
@@ -166,7 +228,14 @@ export function Emails() {
                 <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 text-cyan-300">
                   <Mail className="h-4 w-4" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    <Badge status={selected.attention_label || 'Low'} />
+                    <span className="text-[10px] tabular-nums text-slate-500">
+                      score {(selected.attention_score ?? 0).toFixed(1)}
+                    </span>
+                    <Badge status={selected.status} />
+                  </div>
                   <h2 className="text-base font-semibold text-white">{selected.subject}</h2>
                   <p className="mt-1 text-xs text-slate-400">
                     From {selected.from_name} &lt;{selected.from_address}&gt;
@@ -176,6 +245,18 @@ export function Emails() {
                   </p>
                 </div>
               </div>
+              {selected.attention_meta?.reasons?.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.attention_meta.reasons.map((r) => (
+                    <span
+                      key={r}
+                      className="rounded-md border border-slate-800 bg-slate-950/80 px-2 py-0.5 text-[10px] text-slate-400"
+                    >
+                      {r}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <pre className="whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/70 p-3.5 text-[13px] leading-relaxed text-slate-300">
                 {selected.body}
               </pre>

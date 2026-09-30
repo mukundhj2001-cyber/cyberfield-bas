@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.agent.llm import classify_and_extract, resolve_llm_mode
 from app.config import get_settings
 from app.models import ActivityLog, Approval, Contact, Deal, Email, Product, Task
+from app.services.attention import recompute_one
 
 
 class QuoteWorkflowError(Exception):
@@ -67,6 +68,8 @@ async def run_quote_from_email(
     email.intent = extracted.get("intent")
     email.extracted = extracted
     db.commit()
+    # Refresh attention using extracted line items / deal value
+    attention = recompute_one(db, email)
     trace.append(
         {
             "step": "classify_extract",
@@ -74,6 +77,8 @@ async def run_quote_from_email(
             "confidence": extracted.get("confidence"),
             "llm_mode": extracted.get("llm_mode"),
             "line_item_count": len(extracted.get("line_items") or []),
+            "attention_score": attention.get("attention_score"),
+            "attention_label": attention.get("attention_label"),
         }
     )
 
@@ -293,8 +298,12 @@ def _load_email(
     elif message_id:
         email = q.filter(Email.message_id == message_id).first()
     else:
-        # Default: first unread quote-looking email, else first unread
-        email = q.filter(Email.status == "unread").order_by(Email.id.asc()).first()
+        # Default: highest-attention unread first (critical mail first)
+        email = (
+            q.filter(Email.status == "unread")
+            .order_by(Email.attention_score.desc(), Email.id.asc())
+            .first()
+        )
     if not email:
         raise QuoteWorkflowError("No email found to process")
     return email

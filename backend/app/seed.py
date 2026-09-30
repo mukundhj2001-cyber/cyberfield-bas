@@ -1,8 +1,11 @@
 """Seed sample inbox, pricing catalog, empty CRM, and starter tasks."""
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.orm import Session
 
 from app.models import Contact, Deal, Email, Product, Task
+from app.services.attention import apply_attention, catalog_prices
 
 
 PRODUCTS = [
@@ -62,6 +65,9 @@ PRODUCTS = [
     },
 ]
 
+# Varied ages + content so attention ranking demos clearly.
+_NOW = datetime.now(timezone.utc)
+
 EMAILS = [
     {
         "message_id": "msg-001-quote-bearings",
@@ -71,30 +77,33 @@ EMAILS = [
         "body": (
             "Hello Northwind team,\n\n"
             "We need a formal quotation for upcoming plant maintenance:\n"
-            "- 200 × Industrial Ball Bearing 6205-2RS (or NW-BRG-6205)\n"
-            "- 15 × Mechanical Seal Rebuild Kit\n\n"
+            "- 200 × NW-BRG-6205 Industrial Ball Bearing 6205-2RS\n"
+            "- 15 × NW-SEAL-KIT Mechanical Seal Rebuild Kit\n\n"
             "Ship-to: Lakeside Manufacturing, Toledo OH.\n"
             "Preferred delivery within 10 business days. Net-30 terms if possible.\n\n"
             "Please reply with unit pricing, lead time, and total.\n\n"
             "Regards,\nPriya Nair\nProcurement — Lakeside Manufacturing"
         ),
         "status": "unread",
+        "received_at": _NOW - timedelta(hours=5),
     },
     {
         "message_id": "msg-002-quote-motor-vfd",
         "from_address": "ops@summit-packaging.example",
         "from_name": "Marcus Chen",
-        "subject": "Quote request: 3HP motor + VFD package",
+        "subject": "URGENT — Quote request: 3HP motor + VFD package (needed by Friday)",
         "body": (
             "Hi,\n\n"
-            "Can you quote the following package for our packaging line upgrade?\n"
+            "URGENT — production line upgrade. Need quote ASAP.\n"
             "• 4 units of 3HP TEFC Induction Motor (NW-MTR-3HP)\n"
             "• 4 units of 7.5 HP Variable Frequency Drive (NW-VFD-7)\n\n"
+            "Deadline Friday EOD. Approx budget $8,000–$10,000.\n"
             "Company: Summit Packaging LLC\n"
             "Contact phone: +1-419-555-0142\n\n"
             "Thanks,\nMarcus Chen\nOperations Manager"
         ),
         "status": "unread",
+        "received_at": _NOW - timedelta(hours=2),
     },
     {
         "message_id": "msg-003-general",
@@ -108,6 +117,19 @@ EMAILS = [
             "Elena Rossi\nHarbor Logistics"
         ),
         "status": "unread",
+        "received_at": _NOW - timedelta(days=2),
+    },
+    {
+        "message_id": "msg-004-newsletter",
+        "from_address": "digest@industry-weekly.example",
+        "from_name": "Industry Weekly",
+        "subject": "This week in industrial supply — newsletter",
+        "body": (
+            "Your weekly digest of bearings, motors, and plant news.\n"
+            "Unsubscribe anytime. No action required."
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(days=1),
     },
 ]
 
@@ -116,18 +138,20 @@ def seed_if_empty(db: Session) -> None:
     if db.query(Product).count() == 0:
         for row in PRODUCTS:
             db.add(Product(**row))
+        db.flush()
 
     if db.query(Email).count() == 0:
+        catalog = catalog_prices(db)
         for row in EMAILS:
-            db.add(Email(**row))
+            email = Email(**row)
+            apply_attention(email, catalog=catalog)
+            db.add(email)
 
     # CRM starts empty of deals; leave contacts empty too so quote approval creates them.
-    # Optionally seed one inert contact for UI density without inventing deals.
     if db.query(Contact).count() == 0 and db.query(Deal).count() == 0:
         pass  # intentionally empty — demo creates CRM on approve
 
     if db.query(Task).count() == 0:
-        # No open tasks initially; approval flow creates follow-ups.
         pass
 
     db.commit()

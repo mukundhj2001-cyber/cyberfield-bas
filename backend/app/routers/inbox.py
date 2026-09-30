@@ -17,7 +17,10 @@ def gmail_status():
 
 @router.post("/inbox/sync", response_model=GmailSyncResponse)
 async def sync_gmail_inbox(db: Session = Depends(get_db)):
-    """Sync Gmail into inbox. Uses mock pool unless OAuth credentials are configured."""
+    """Sync Gmail into inbox. Uses mock pool unless OAuth credentials are configured.
+
+    After import, attention scores are recomputed for the full inbox.
+    """
     result = await sync_inbox(db)
     return GmailSyncResponse(
         mode=result["mode"],
@@ -26,6 +29,7 @@ async def sync_gmail_inbox(db: Session = Depends(get_db)):
         emails=[EmailOut.model_validate(e) for e in result["emails"]],
         status=GmailStatusOut.model_validate(result["status"]),
         warning=result.get("warning"),
+        attention_rescored=int(result.get("attention_rescored") or 0),
     )
 
 

@@ -17,6 +17,7 @@ Built as a portfolio slice for [Cyberfield](https://github.com/mukundhj2001-cybe
 | Workflow | `quote_from_email` state machine (LangGraph-shaped stages) |
 | LLM | OpenAI / Anthropic when keyed; otherwise **deterministic mock** |
 | Ingest | **Mock Gmail sync** (default) · optional Google OAuth · **n8n webhooks** |
+| Ranking | Attention score + Critical/High/Medium/Low labels on every inbox message |
 
 Optional Postgres via `docker-compose.yml` (Docker not required for the local demo).
 
@@ -29,11 +30,14 @@ cyberfield-bas/
 │   │   ├── main.py
 │   │   ├── models.py / schemas.py / database.py / seed.py
 │   │   ├── agent/           # llm + quote_workflow
-│   │   ├── services/gmail.py
+│   │   ├── services/        # gmail.py + attention.py
 │   │   └── routers/         # emails, inbox, workflows, approvals, crm, tasks, webhooks, dashboard
 │   └── requirements.txt
 ├── frontend/                # Dark ops UI (Cyberfield branding)
 ├── examples/n8n/            # Sample n8n workflow JSON
+├── scripts/
+│   ├── demo_api.sh
+│   └── gmail_oauth_refresh_token.py
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -67,21 +71,28 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ### 3. Demo script (mock LLM + mock Gmail, offline)
 
-1. **Inbox** — click **Sync Gmail** (imports demo Gmail-like RFQs) or open a seeded RFQ.
-2. Click **Run quote workflow**.
-3. **Approvals** — review line items / edit qty or email body.
-4. Click **Approve & send (mock)**.
-5. **CRM** — contact + deal at `quote_sent`; **Tasks** — follow-up assigned to Sales Ops.
-6. **Dashboard** — activity feed shows `gmail_sync` / `email_sent` / `crm_update` / `task_created`.
-7. **Workflows** — copy n8n webhook URLs + sample payload.
+1. **Inbox** — messages are sorted by **attention** (Critical → Low). Click **Sync Gmail** to import more varied mock RFQs.
+2. Use the **Priority** chips to filter Critical / High / Medium / Low.
+3. Select a high-attention RFQ → **Run quote workflow**.
+4. **Approvals** — review line items / edit qty or email body.
+5. Click **Approve & send (mock)**.
+6. **CRM** — contact + deal at `quote_sent`; **Tasks** — follow-up assigned to Sales Ops.
+7. **Dashboard** — activity feed shows `gmail_sync` / `email_sent` / `crm_update` / `task_created`.
+8. **Workflows** — copy n8n webhook URLs + sample payload.
 
 API-only path:
 
 ```bash
-# Mock Gmail sync
+# Mock Gmail sync (+ attention rescore)
 curl -s -X POST http://localhost:8000/inbox/sync | python -m json.tool
 
-# Process first unread / specific email
+# Inbox sorted by attention (default)
+curl -s 'http://localhost:8000/emails?sort=attention' | python -m json.tool
+
+# Filter by priority label
+curl -s 'http://localhost:8000/emails?priority=Critical' | python -m json.tool
+
+# Process highest-attention unread (omit body) or a specific email
 curl -s -X POST http://localhost:8000/workflows/quote/run \
   -H 'Content-Type: application/json' -d '{"email_id":1}'
 
@@ -98,11 +109,42 @@ curl -s -X POST http://localhost:8000/approvals/1/approve \
 
 Or: `bash scripts/demo_api.sh`
 
+## Attention ranking
+
+Every inbox message stores:
+
+| Field | Meaning |
+|-------|---------|
+| `attention_score` | 0–100 composite score |
+| `attention_label` | `Critical` (≥70) · `High` (≥50) · `Medium` (≥30) · `Low` (<30) |
+| `attention_meta` | Factor breakdown + human-readable reasons |
+
+**Scoring factors**
+
+| Factor | Signals (examples) | Cap |
+|--------|--------------------|-----|
+| Urgency language | ASAP, urgent, EOD, deadline dates, “needed by/within” | 30 |
+| RFQ / quote intent | RFQ, quote, please quote, quantities | 25 |
+| Estimated deal value | Catalog SKU×qty or `$` amounts in body | 25 |
+| Age / unread | Unread, fresh (<6h), stale unread (>24h / >72h) | 15 |
+| Escalation | escalate, complaint, cancel, legal, CEO/VP, production down | 20 |
+
+**When scores recompute**
+
+- On seed / app startup (existing DBs migrate columns + rescore)
+- After every `POST /inbox/sync` (full inbox)
+- On external ingest (`POST /webhooks/n8n/email`)
+- After quote workflow extract (uses matched line items for value)
+- Manually: `POST /emails/recompute-attention`
+
+Inbox UI defaults to attention-desc sort with rank chips and an optional priority filter. Mock/seeded mail is written with varied urgency so demos show a clear Critical → Low ordering.
+
 ## Mock vs real matrix
 
 | Capability | Status |
 |------------|--------|
 | Inbox UI + quote workflow + approvals | **Real** (API + UI) |
+| Attention ranking | **Real** (heuristic scorer) |
 | Pricing catalog / CRM / tasks writes | **Real** (SQLite) |
 | LLM extraction | **Mock by default**; optional OpenAI/Anthropic |
 | Gmail sync | **Mock by default** (seeded pool); optional OAuth |
@@ -115,11 +157,37 @@ Or: `bash scripts/demo_api.sh`
 | Mode | When | Behavior |
 |------|------|----------|
 | **mock** (default) | `GMAIL_MODE=mock` or OAuth env incomplete | `POST /inbox/sync` imports stable demo messages (`gmail-mock-00*`) idempotently |
-| **oauth** | `GMAIL_MODE=oauth` + `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + `GOOGLE_REFRESH_TOKEN` | Lists recent Gmail inbox via API; falls back to mock on failure |
+| **oauth** | `GMAIL_MODE=oauth` + `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + `GOOGLE_REFRESH_TOKEN` | `users.messages.list` + `get` → idempotent import (`gmail-{id}`); falls back to mock on failure |
 
-Never commit secrets. Copy `.env.example` → `backend/.env`.
+UI chip / `GET /inbox/gmail/status`: **Mock** vs **Connected**. Never commit secrets — copy `.env.example` → `backend/.env`.
 
-**OAuth setup (optional):** create a Google Cloud OAuth client (Desktop or Web), obtain a refresh token with Gmail readonly scope (`https://www.googleapis.com/auth/gmail.readonly`), set the three env vars, set `GMAIL_MODE=oauth`, restart the API. Status: `GET /inbox/gmail/status`.
+#### Real Gmail setup (refresh token)
+
+1. In [Google Cloud Console](https://console.cloud.google.com/): create/select a project → enable **Gmail API**.
+2. APIs & Services → Credentials → **Create OAuth client ID** → Application type **Desktop app**. Copy Client ID + Client Secret (or download the JSON).
+3. Configure the OAuth consent screen (External / Testing is fine for personal use). Add your Google account as a test user if the app is in Testing.
+4. Generate a refresh token locally (browser consent; readonly scope only):
+
+```bash
+python scripts/gmail_oauth_refresh_token.py \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret YOUR_CLIENT_SECRET
+# or:  --client-secrets ./client_secret.json
+```
+
+5. Paste into `backend/.env` (do **not** commit):
+
+```env
+GMAIL_MODE=oauth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REFRESH_TOKEN=...
+```
+
+6. Restart the API. Confirm `GET /inbox/gmail/status` shows `"connected": true`, `"label": "Connected"`.
+7. `POST /inbox/sync` imports recent inbox mail idempotently and re-ranks attention.
+
+Scope used: `https://www.googleapis.com/auth/gmail.readonly`. If Google returns no `refresh_token`, revoke the app at https://myaccount.google.com/permissions and re-run the script (it requests `prompt=consent` + `access_type=offline`).
 
 ### LLM: mock vs real
 
@@ -144,7 +212,9 @@ Import `examples/n8n/gmail-to-bas.json` into n8n (Gmail Trigger → HTTP Request
 
 - `GET /health`
 - `GET /dashboard/stats`
-- `GET /emails`, `GET /emails/{id}`
+- `GET /emails` (`?sort=attention|received|id`, `?priority=Critical|High|Medium|Low`)
+- `POST /emails/recompute-attention`
+- `GET /emails/{id}`, `POST /emails/{id}/recompute-attention`
 - `GET /inbox/gmail/status`, `POST /inbox/sync` (alias `POST /gmail/sync`)
 - `POST /workflows/quote/run`
 - `GET /approvals`, `POST /approvals/{id}/approve|reject`
@@ -160,6 +230,9 @@ cd frontend && npm run build
 
 # Backend import
 cd backend && source .venv/bin/activate && python -c "from app.main import app"
+
+# Smoke sync + ranking order (API must be running)
+bash scripts/demo_api.sh
 ```
 
 ## Branding
