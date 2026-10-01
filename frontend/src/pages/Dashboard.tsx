@@ -10,19 +10,30 @@ import {
   Package,
   Mail,
   Workflow,
+  Sparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
 import type { DashboardStats } from '../lib/types'
 import { StatCard } from '../components/StatCard'
 import { EmptyState } from '../components/EmptyState'
+import { PageHeader } from '../components/PageHeader'
+import { LoadingState } from '../components/LoadingState'
+import { ErrorBanner } from '../components/ErrorBanner'
 
-const kindIcon: Record<string, typeof Bot> = {
-  gmail_sync: Mail,
-  webhook_ingest: Workflow,
-  email_sent: Mail,
-  crm_update: Users,
-  task_created: CheckSquare,
-  workflow: Bot,
+const kindMeta: Record<string, { label: string; icon: typeof Bot }> = {
+  gmail_sync: { label: 'Inbox sync', icon: Mail },
+  webhook_ingest: { label: 'Inbound webhook', icon: Workflow },
+  email_sent: { label: 'Email sent', icon: Mail },
+  crm_update: { label: 'CRM update', icon: Users },
+  task_created: { label: 'Task created', icon: CheckSquare },
+  workflow: { label: 'Workflow', icon: Bot },
+}
+
+function llmLabel(mode: string) {
+  if (!mode) return 'Standard'
+  if (mode.toLowerCase().includes('mock')) return 'Built-in'
+  if (mode.toLowerCase().includes('openai')) return 'OpenAI'
+  return mode
 }
 
 export function Dashboard() {
@@ -38,46 +49,42 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
-        Backend unreachable: {error}. Start the API on :8000.
-      </div>
+      <ErrorBanner message={`Unable to reach the API (${error}). Confirm the backend is running on port 8000.`} />
     )
   }
 
   if (!stats) {
-    return <div className="text-sm text-slate-500">Loading ops overview…</div>
+    return <LoadingState label="Loading operations overview…" />
   }
+
+  const isEmpty =
+    stats.emails_total === 0 &&
+    stats.approvals_pending === 0 &&
+    stats.deals_open === 0 &&
+    stats.recent_activity.length === 0
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-cyan-500/80">
-            Operations hub
-          </div>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-white">
-            Cyberfield BAS dashboard
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Quote-from-email agent · LLM{' '}
-            <span className="font-mono text-cyan-300">{stats.llm_mode}</span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to="/emails"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-600"
-          >
-            Inbox
-          </Link>
-          <Link
-            to="/emails"
-            className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400"
-          >
-            Run quote workflow <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Operations hub"
+        title="Cyberfield Business Automation"
+        description={
+          <>
+            Quote-from-email automation with human approval · Engine{' '}
+            <span className="font-medium text-cyan-300">{llmLabel(stats.llm_mode)}</span>
+          </>
+        }
+        actions={
+          <>
+            <Link to="/emails" className="btn-secondary">
+              Open inbox
+            </Link>
+            <Link to="/emails" className="btn-primary">
+              Run quote <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
@@ -90,7 +97,7 @@ export function Dashboard() {
         <StatCard
           label="Approvals"
           value={stats.approvals_pending}
-          hint="Awaiting human"
+          hint="Awaiting review"
           icon={ShieldCheck}
           accent="amber"
         />
@@ -128,13 +135,19 @@ export function Dashboard() {
           {stats.recent_activity.length === 0 ? (
             <EmptyState
               title="No activity yet"
-              description="Sync Gmail or process an RFQ from Inbox to generate a draft quote."
+              description="Sync your inbox or run a quote workflow to see live operations here."
               icon={Bot}
+              actions={
+                <Link to="/emails" className="btn-primary">
+                  Go to Inbox
+                </Link>
+              }
             />
           ) : (
             <ul className="space-y-2">
               {stats.recent_activity.map((a) => {
-                const Icon = kindIcon[a.kind] || Bot
+                const meta = kindMeta[a.kind] || { label: a.kind.replaceAll('_', ' '), icon: Bot }
+                const Icon = meta.icon
                 return (
                   <li
                     key={a.id}
@@ -144,8 +157,8 @@ export function Dashboard() {
                       <Icon className="h-3 w-3" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-medium uppercase tracking-wide text-cyan-400/80">
-                        {a.kind}
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/85">
+                        {meta.label}
                       </div>
                       <div className="mt-0.5 text-sm text-slate-200">{a.message}</div>
                     </div>
@@ -160,23 +173,28 @@ export function Dashboard() {
         </div>
 
         <div className="ops-panel-glow space-y-4 rounded-xl p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
-            Demo script
-          </h2>
-          <ol className="list-decimal space-y-2 pl-4 text-sm text-slate-400">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+            <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+              {isEmpty ? 'Get started' : 'Quick path'}
+            </h2>
+          </div>
+          <ol className="list-decimal space-y-2.5 pl-4 text-sm leading-relaxed text-slate-400">
             <li>
-              Inbox → <span className="text-cyan-300">Sync Gmail</span> (mock) or pick an RFQ
+              Open <span className="text-cyan-300">Inbox</span> → Sync Gmail or connect your mailbox
             </li>
             <li>
-              Click <span className="text-cyan-300">Run quote workflow</span>
+              Select an RFQ and click <span className="text-cyan-300">Run quote</span>
             </li>
-            <li>Review draft in Approvals (edit qty / email)</li>
-            <li>Approve → CRM deal + follow-up task</li>
+            <li>Review the draft in Approvals — edit quantities or the email</li>
+            <li>Approve to send, create a CRM deal, and assign a follow-up</li>
           </ol>
           <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 p-3 text-[11px] leading-relaxed text-slate-500">
-            Optional: POST from n8n to{' '}
-            <code className="font-mono text-cyan-400/90">/webhooks/n8n/email</code>. See Workflows.
+            Optional: connect n8n or another orchestrator via Workflows for inbound email automation.
           </div>
+          <Link to="/emails" className="btn-primary w-full justify-center">
+            Start with Inbox <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </div>

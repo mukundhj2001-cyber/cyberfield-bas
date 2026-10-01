@@ -19,6 +19,8 @@ const tones: Record<string, string> = {
   medium: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   low: 'border-slate-500/30 bg-slate-500/10 text-slate-300',
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  ready: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',
+  standby: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   mock: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   Mock: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   Connected: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
@@ -27,13 +29,38 @@ const tones: Record<string, string> = {
   default: 'border-slate-600/40 bg-slate-700/30 text-slate-300',
 }
 
-export function Badge({ status }: { status: string }) {
+/** Product-facing labels — never surface raw “mock/demo” to users. */
+const labels: Record<string, string> = {
+  mock: 'Offline mode',
+  Mock: 'Offline mode',
+  Connected: 'Gmail connected',
+  oauth: 'Gmail connected',
+  quote_sent: 'Quote sent',
+  in_progress: 'In progress',
+  ready: 'Ready',
+  standby: 'Standby',
+  secured: 'Secured',
+  open: 'Open',
+  active: 'Active',
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  unread: 'Unread',
+  quoted: 'Quoted',
+  processing: 'Processing',
+  ignored: 'Ignored',
+  done: 'Done',
+  qualified: 'Qualified',
+}
+
+export function Badge({ status, label }: { status: string; label?: string }) {
   const tone = tones[status] || tones.default
+  const text = label ?? labels[status] ?? status.replaceAll('_', ' ')
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tone}`}
     >
-      {status.replaceAll('_', ' ')}
+      {text}
     </span>
   )
 }
