@@ -2,7 +2,7 @@
 
 Agency-grade **inbound business ops** package — **not a chatbot**, not quote-only.
 
-Sample tenant **Northwind Industrial**:
+Sample tenant **Cyberfield Support**:
 
 > Inbound B2B email → business filter → attention rank → **intent classify** → extract → **action plan** (draft reply/quote, stage CRM, ticket/task, escalate if Critical) → **human approval** → apply selected steps (mock send, CRM, tickets, tasks).
 
@@ -57,7 +57,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Health: [http://localhost:8000/health](http://localhost:8000/health)  
+Health: [http://localhost:8000/health](http://localhost:8000/health)<br>
 Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ### 2. Frontend
@@ -290,6 +290,6 @@ bash scripts/demo_api.sh
 
 ## Branding
 
-Product: **Cyberfield Business Automation System** / short **Cyberfield BAS**  
-Sample company: **Northwind Industrial** (fictional).  
+Product: **Cyberfield Business Automation System** / short **Cyberfield BAS**<br>
+Sample company: **Cyberfield Support** (fictional). Draft replies are prepared by **Cyberfield AI** and held for human approval.
 UI style: dark ops dashboard (visual reference only — not Futurion or any third-party product name/logo).

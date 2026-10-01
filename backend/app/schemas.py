@@ -211,7 +211,7 @@ class N8nEmailWebhook(BaseModel):
     subject: str
     body: str
     from_name: Optional[str] = ""
-    to_address: Optional[str] = "quotes@northwind-industrial.example"
+    to_address: Optional[str] = "support@cyberfield.example"
     message_id: Optional[str] = None
     run_quote_workflow: bool = False
     run_ops_workflow: bool = False

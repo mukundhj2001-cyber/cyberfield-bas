@@ -14,7 +14,7 @@ class Email(Base):
     message_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     from_address: Mapped[str] = mapped_column(String(255))
     from_name: Mapped[str] = mapped_column(String(255), default="")
-    to_address: Mapped[str] = mapped_column(String(255), default="quotes@northwind-industrial.example")
+    to_address: Mapped[str] = mapped_column(String(255), default="support@cyberfield.example")
     subject: Mapped[str] = mapped_column(String(500))
     body: Mapped[str] = mapped_column(Text)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

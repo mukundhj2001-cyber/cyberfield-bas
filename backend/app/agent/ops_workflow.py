@@ -40,6 +40,13 @@ class OpsWorkflowError(Exception):
     pass
 
 
+def _draft_footer(settings: Any) -> str:
+    """Return the consistent human-approval note for generated replies."""
+    ai_name = getattr(settings, "ai_name", "Cyberfield AI")
+    brand_name = getattr(settings, "brand_name", "Cyberfield BAS")
+    return f"(Draft prepared by {ai_name} via {brand_name} — pending human approval)"
+
+
 # Keep QuoteWorkflowError alias for older imports
 QuoteWorkflowError = OpsWorkflowError
 
@@ -598,7 +605,7 @@ def _build_action_plan(
                 f"We have received it and are preparing fulfillment.\n\n"
                 f"Our ops team will confirm shipment window shortly.\n\n"
                 f"Best regards,\n{settings.company_name} Order Desk\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         amt = float(amounts[0]["amount"]) if amounts else 0.0
@@ -639,7 +646,7 @@ def _build_action_plan(
                 f"Extracted amounts:\n{amt_lines}\n\n"
                 f"Our finance team will reconcile and follow up if anything is needed.\n\n"
                 f"Best regards,\n{settings.company_name} Finance\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -670,7 +677,7 @@ def _build_action_plan(
                 f"share tracking as soon as it is available.\n\n"
                 f"KB refs: {', '.join(r['ref'] for r in kb_refs) or 'KB-LEADTIMES'}.\n\n"
                 f"Best regards,\n{settings.company_name} Logistics\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -696,7 +703,7 @@ def _build_action_plan(
                 f"References: {', '.join(r['ref'] for r in kb_refs) or 'KB-CATALOG, KB-DATASHEETS'}.\n"
                 f"Please reply with SKUs or product families you need and we will attach the files.\n\n"
                 f"Best regards,\n{settings.company_name} Product Support\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -724,7 +731,7 @@ def _build_action_plan(
                 f"Next steps: we will investigate, propose a remedy (replacement, RMA, or credit), "
                 f"and confirm timelines within one business day.\n\n"
                 f"Best regards,\n{settings.company_name} Customer Success\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         ticket_draft = {
@@ -763,7 +770,7 @@ def _build_action_plan(
                 f"Please pick a 30-minute slot or reply with two alternatives and we will confirm.\n\n"
                 f"We can cover product fit, lead times, and commercial terms on the call.\n\n"
                 f"Best regards,\n{settings.company_name} Sales\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -788,7 +795,7 @@ def _build_action_plan(
                 f"Our commercial + legal review queue has been notified. "
                 f"We typically respond within 3–5 business days with redlines or next steps.\n\n"
                 f"Best regards,\n{settings.company_name} Partnerships\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -814,7 +821,7 @@ def _build_action_plan(
                 f"(see KB-VENDOR / KB-COMPLIANCE).\n\n"
                 f"Reply with your preferred portal link or attached forms and we will prioritize.\n\n"
                 f"Best regards,\n{settings.company_name} Supplier Ops\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -839,7 +846,7 @@ def _build_action_plan(
                 f"Thank you for your message. We have logged this with our operations team "
                 f"and will follow up with a clear response shortly.\n\n"
                 f"Best regards,\n{settings.company_name}\n"
-                f"(Draft — pending human approval)\n"
+                f"{_draft_footer(settings)}\n"
             ),
         }
         task_drafts.append(
@@ -896,7 +903,7 @@ def _draft_quote_email(quote: dict[str, Any], *, original_subject: str, settings
         f"Please reply to confirm or request changes.\n\n"
         f"Best regards,\n"
         f"{settings.company_name} Sales\n"
-        f"(Draft prepared by Cyberfield BAS — pending human approval)\n"
+        f"{_draft_footer(settings)}\n"
     )
     return {
         "to": quote.get("contact_email"),

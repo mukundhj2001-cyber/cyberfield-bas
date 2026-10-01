@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     anthropic_model: str = "claude-3-5-haiku-latest"
-    company_name: str = "Northwind Industrial"
+    company_name: str = "Cyberfield Support"
     brand_name: str = "Cyberfield BAS"
+    ai_name: str = "Cyberfield AI"
 
     # Gmail — leave unset for mock sync (default)
     gmail_mode: str = "mock"  # mock | oauth

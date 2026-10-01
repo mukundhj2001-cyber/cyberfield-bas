@@ -85,7 +85,7 @@ async def n8n_email(
         from_name=payload.from_name or "",
         subject=payload.subject,
         body=payload.body,
-        to_address=payload.to_address or "quotes@northwind-industrial.example",
+        to_address=payload.to_address or "support@cyberfield.example",
         message_id=payload.message_id,
         source="n8n",
     )

@@ -76,7 +76,7 @@ EMAILS = [
         "from_name": "Priya Nair",
         "subject": "RFQ — 6205 bearings and seal kits for Q4 line maintenance",
         "body": (
-            "Hello Northwind team,\n\nWe need a formal quotation for upcoming plant maintenance:\n"
+            "Hello Cyberfield Support team,\n\nWe need a formal quotation for upcoming plant maintenance:\n"
             "- 200 × NW-BRG-6205 Industrial Ball Bearing 6205-2RS\n"
             "- 15 × NW-SEAL-KIT Mechanical Seal Rebuild Kit\n\n"
             "Ship-to: Lakeside Manufacturing, Toledo OH.\n"

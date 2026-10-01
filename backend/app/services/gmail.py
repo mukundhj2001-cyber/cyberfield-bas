@@ -46,7 +46,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Jordan Blake",
         "subject": "URGENT RFQ — Centrifugal Process Pump C2 × 2 — ASAP",
         "body": (
-            "Hello Northwind,\n\nURGENT — production halted. Please quote ASAP:\n"
+            "Hello Cyberfield Support,\n\nURGENT — production halted. Please quote ASAP:\n"
             "- 2 × Centrifugal Process Pump C2 (NW-PMP-C2)\n"
             "- 4 × Mechanical Seal Rebuild Kit (NW-SEAL-KIT)\n\n"
             "Need delivery to Riverbend Plants, Cleveland OH within 3 weeks.\n\nJordan Blake\nPurchasing"
@@ -82,7 +82,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Dana Okonkwo",
         "subject": "Escalation: overdue quote on NW-MTR-3HP — CEO reviewing suppliers",
         "body": (
-            "Northwind,\n\nThis is an escalation / final notice. We requested a quote two weeks ago for\n"
+            "Cyberfield Support,\n\nThis is an escalation / final notice. We requested a quote two weeks ago for\n"
             "12 × NW-MTR-3HP motors (~$8,200). Our CEO is reviewing suppliers Friday.\n"
             "Please respond urgently or we will cancel the RFQ.\n\nDana Okonkwo\nVP Operations — Midwest Steel"
         ),
@@ -172,7 +172,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Morgan Lee",
         "subject": "NDA + partnership discussion — MSA draft attached",
         "body": (
-            "Northwind team,\n\nWe would like to execute a non-disclosure agreement (NDA) and explore a "
+            "Cyberfield Support team,\n\nWe would like to execute a non-disclosure agreement (NDA) and explore a "
             "distribution partnership. Please review our MSA draft and return redlines.\n\nMorgan Lee\nLegal / Partnerships"
         ),
         "received_at": _MOCK_NOW - timedelta(hours=20),
@@ -410,7 +410,7 @@ async def _sync_mock(db: Session) -> dict[str, Any]:
             "message_id": row["message_id"],
             "from_address": row["from_address"],
             "from_name": row["from_name"],
-            "to_address": "quotes@northwind-industrial.example",
+            "to_address": "support@cyberfield.example",
             "subject": row["subject"],
             "body": row["body"],
             "received_at": row.get("received_at") or datetime.now(timezone.utc),
@@ -639,7 +639,7 @@ def _parse_gmail_message(msg: dict[str, Any]) -> dict[str, Any]:
     payload = msg.get("payload") or {}
     headers = _header_map(payload)
     from_name, from_address = _parse_from(headers.get("from", "unknown@example.com"))
-    to_raw = headers.get("to", "quotes@northwind-industrial.example")
+    to_raw = headers.get("to", "support@cyberfield.example")
     _, to_address = _parse_from(to_raw) if "<" in to_raw else ("", to_raw)
     subject = headers.get("subject", "(no subject)")
     body = _extract_body(payload) or msg.get("snippet") or ""
@@ -659,7 +659,7 @@ def _parse_gmail_message(msg: dict[str, Any]) -> dict[str, Any]:
     return {
         "from_address": from_address or "unknown@example.com",
         "from_name": from_name,
-        "to_address": to_address or "quotes@northwind-industrial.example",
+        "to_address": to_address or "support@cyberfield.example",
         "subject": subject,
         "body": body,
         "received_at": received_at,
@@ -673,7 +673,7 @@ async def ingest_external_email(
     subject: str,
     body: str,
     from_name: str = "",
-    to_address: str = "quotes@northwind-industrial.example",
+    to_address: str = "support@cyberfield.example",
     message_id: str | None = None,
     source: str = "n8n",
 ) -> Email | dict[str, Any]:

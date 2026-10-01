@@ -74,8 +74,8 @@ export function Layout() {
               <Building2 className="h-3 w-3 text-cyan-400" />
               Organization
             </div>
-            <div className="text-[13px] font-semibold text-white">Northwind Industrial</div>
-            <div className="mt-0.5 text-[10px] text-slate-500">Production workspace</div>
+            <div className="text-[13px] font-semibold text-white">Cyberfield Support</div>
+            <div className="mt-0.5 text-[10px] text-slate-500">Cyberfield AI ops workspace</div>
           </div>
         </div>
       </aside>
