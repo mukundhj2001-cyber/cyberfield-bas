@@ -1,13 +1,14 @@
-"""Seed sample inbox, pricing catalog, empty CRM, and starter tasks."""
+"""Seed catalog + varied B2B inbox covering the full intent matrix."""
 
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.agent.intents import suggested_action_for
+from app.agent.llm import mock_classify_intent
 from app.models import Contact, Deal, Email, Product, Task
 from app.services.attention import apply_attention, catalog_prices
 from app.services.business_relevance import classify_business_relevance
-
 
 PRODUCTS = [
     {
@@ -66,7 +67,6 @@ PRODUCTS = [
     },
 ]
 
-# Varied ages + content so attention ranking demos clearly.
 _NOW = datetime.now(timezone.utc)
 
 EMAILS = [
@@ -76,13 +76,11 @@ EMAILS = [
         "from_name": "Priya Nair",
         "subject": "RFQ — 6205 bearings and seal kits for Q4 line maintenance",
         "body": (
-            "Hello Northwind team,\n\n"
-            "We need a formal quotation for upcoming plant maintenance:\n"
+            "Hello Northwind team,\n\nWe need a formal quotation for upcoming plant maintenance:\n"
             "- 200 × NW-BRG-6205 Industrial Ball Bearing 6205-2RS\n"
             "- 15 × NW-SEAL-KIT Mechanical Seal Rebuild Kit\n\n"
             "Ship-to: Lakeside Manufacturing, Toledo OH.\n"
             "Preferred delivery within 10 business days. Net-30 terms if possible.\n\n"
-            "Please reply with unit pricing, lead time, and total.\n\n"
             "Regards,\nPriya Nair\nProcurement — Lakeside Manufacturing"
         ),
         "status": "unread",
@@ -94,42 +92,95 @@ EMAILS = [
         "from_name": "Marcus Chen",
         "subject": "URGENT — Quote request: 3HP motor + VFD package (needed by Friday)",
         "body": (
-            "Hi,\n\n"
-            "URGENT — production line upgrade. Need quote ASAP.\n"
+            "Hi,\n\nURGENT — production line upgrade. Need quote ASAP.\n"
             "• 4 units of 3HP TEFC Induction Motor (NW-MTR-3HP)\n"
             "• 4 units of 7.5 HP Variable Frequency Drive (NW-VFD-7)\n\n"
             "Deadline Friday EOD. Approx budget $8,000–$10,000.\n"
-            "Company: Summit Packaging LLC\n"
-            "Contact phone: +1-419-555-0142\n\n"
-            "Thanks,\nMarcus Chen\nOperations Manager"
+            "Company: Summit Packaging LLC\n\nThanks,\nMarcus Chen\nOperations Manager"
         ),
         "status": "unread",
         "received_at": _NOW - timedelta(hours=2),
     },
     {
-        "message_id": "msg-003-general",
+        "message_id": "msg-003-catalog",
         "from_address": "info@harbor-logistics.example",
         "from_name": "Elena Rossi",
-        "subject": "Catalog and distributor terms?",
+        "subject": "Catalog, datasheet, and distributor terms?",
         "body": (
-            "Good afternoon,\n\n"
-            "Do you have a current product catalog and standard distributor terms?\n"
-            "We are evaluating suppliers for conveyor idlers and pumps.\n\n"
-            "Elena Rossi\nHarbor Logistics"
+            "Good afternoon,\n\nDo you have a current product catalog, datasheets, and standard "
+            "distributor terms? Evaluating suppliers for conveyor idlers and pumps. "
+            "Availability confirmation appreciated.\n\nElena Rossi\nHarbor Logistics"
         ),
         "status": "unread",
         "received_at": _NOW - timedelta(days=2),
     },
-    # Noise samples below are classified out at seed time (not persisted) to prove the filter.
+
+    {
+        "message_id": "msg-006-shipping",
+        "from_address": "recv@lakeside-mfg.example",
+        "from_name": "Priya Nair",
+        "subject": "Where is shipment for PO-3890? Need tracking / ETA",
+        "body": (
+            "Hi logistics,\n\nCan you share tracking and delivery status for PO-3890?\n"
+            "Lead time update appreciated.\n\nPriya Nair"
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=4),
+    },
+    {
+        "message_id": "msg-007-complaint",
+        "from_address": "qa@summit-packaging.example",
+        "from_name": "Alex Rivera",
+        "subject": "Quality complaint — damaged seal kit, need RMA",
+        "body": (
+            "We received NW-SEAL-KIT that arrived damaged / defective.\n"
+            "Unacceptable. Please open an RMA and advise replacement or refund.\n\nAlex Rivera"
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=3),
+    },
+    {
+        "message_id": "msg-008-meeting",
+        "from_address": "proc@harbor-logistics.example",
+        "from_name": "Elena Rossi",
+        "subject": "Demo / discovery call next week?",
+        "body": (
+            "We would like to schedule a meeting / product demo.\n"
+            "Available Tuesday 2pm. Zoom preferred.\n\nElena Rossi"
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=9),
+    },
+    {
+        "message_id": "msg-009-invoice",
+        "from_address": "ap@coastal-agg.example",
+        "from_name": "Finance Desk",
+        "subject": "Remittance advice — INV-2201 paid $3,240 via ACH",
+        "body": (
+            "Please find remittance for invoice INV-2201.\n"
+            "Amount paid: $3,240.00 USD via ACH. PO-4100 referenced.\n\nAP Coastal Aggregates"
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=8),
+    },
+    {
+        "message_id": "msg-010-po",
+        "from_address": "buyer@riverbend-plants.example",
+        "from_name": "Jordan Blake",
+        "subject": "PO-4412 released — please confirm order",
+        "body": (
+            "Purchase order PO-4412 is released for the pump package ($4,860).\n"
+            "Please confirm order acknowledgment.\n\nJordan Blake"
+        ),
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=7),
+    },
     {
         "message_id": "msg-004-newsletter",
         "from_address": "digest@industry-weekly.example",
         "from_name": "Industry Weekly",
         "subject": "This week in industrial supply — newsletter",
-        "body": (
-            "Your weekly digest of bearings, motors, and plant news.\n"
-            "Unsubscribe anytime. No action required."
-        ),
+        "body": "Your weekly digest. Unsubscribe anytime. No action required.",
         "status": "unread",
         "received_at": _NOW - timedelta(days=1),
     },
@@ -143,6 +194,25 @@ EMAILS = [
         "received_at": _NOW - timedelta(hours=6),
     },
 ]
+
+
+def _annotate(email: Email) -> None:
+    classified = mock_classify_intent(
+        {
+            "from_address": email.from_address,
+            "from_name": email.from_name,
+            "subject": email.subject,
+            "body": email.body,
+        }
+    )
+    intent = classified.get("intent") or "other_business"
+    email.intent = intent
+    email.extracted = classified
+    email.suggested_action = suggested_action_for(
+        intent,
+        attention_label=email.attention_label or "Low",
+        confidence=float(classified.get("confidence") or 0.7),
+    )
 
 
 def seed_if_empty(db: Session) -> None:
@@ -161,18 +231,16 @@ def seed_if_empty(db: Session) -> None:
                 from_name=row.get("from_name") or "",
             )
             if not verdict.is_business:
-                # Prefer not importing noise into the inbox
                 continue
             email = Email(**row)
             email.business_relevant = True
             email.business_meta = verdict.as_meta()
             apply_attention(email, catalog=catalog)
+            _annotate(email)
             db.add(email)
 
-    # CRM starts empty of deals; leave contacts empty too so quote approval creates them.
     if db.query(Contact).count() == 0 and db.query(Deal).count() == 0:
-        pass  # intentionally empty — demo creates CRM on approve
-
+        pass
     if db.query(Task).count() == 0:
         pass
 

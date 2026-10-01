@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Play, Mail, RefreshCw, Link2, Filter, Plug } from 'lucide-react'
+import { Play, Mail, RefreshCw, Link2, Filter, Plug, Sparkles } from 'lucide-react'
 import { api } from '../api/client'
 import type { Email, GmailStatus } from '../lib/types'
 import { Badge } from '../components/Badge'
@@ -63,18 +63,17 @@ export function Emails() {
       await load()
       const parts = [
         `Imported ${result.imported}`,
+        result.classified ? `classified ${result.classified}` : null,
+        result.plans_staged ? `staged ${result.plans_staged} plans` : null,
         result.skipped ? `skipped ${result.skipped}` : null,
-        result.filtered && result.filtered > 0
-          ? `filtered ${result.filtered} non-business`
-          : null,
+        result.filtered && result.filtered > 0 ? `filtered ${result.filtered} non-business` : null,
       ].filter(Boolean)
       toast.success(`Inbox synced · ${parts.join(' · ')}`)
-      if (result.filtered && result.filtered > 0) {
-        setFilteredCount(result.filtered)
+      if (result.filtered && result.filtered > 0) setFilteredCount(result.filtered)
+      if (result.plans_staged && result.plans_staged > 0) {
+        toast.info(`${result.plans_staged} action plan(s) awaiting approval`)
       }
-      if (result.warning) {
-        toast.info(result.warning)
-      }
+      if (result.warning) toast.info(result.warning)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg)
@@ -84,15 +83,16 @@ export function Emails() {
     }
   }
 
-  const runQuote = async () => {
+  const proposeAction = async () => {
     if (!selected) return
     setRunning(true)
     setError(null)
     try {
-      const result = await api.runQuote({ email_id: selected.id })
+      const result = await api.runOps({ email_id: selected.id })
       await load()
-      toast.success('Quote draft ready for review')
-      navigate(`/approvals/${result.approval_id}`)
+      toast.success('Action plan staged for human approval')
+      if (result.approval_id) navigate(`/approvals/${result.approval_id}`)
+      else navigate('/approvals')
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg)
@@ -113,13 +113,14 @@ export function Emails() {
 
   const gmailConnected = Boolean(gmail?.connected)
   const gmailChipLabel = gmailConnected ? 'Gmail connected' : 'Offline mode'
+  const sa = selected?.suggested_action
 
   return (
     <div className="space-y-4">
       <PageHeader
         eyebrow="Communications"
         title="Inbox"
-        description="Business mail only · ranked by attention (critical first)"
+        description="Business mail only · intent classified · action plans staged for approval"
         actions={
           <>
             {gmail ? (
@@ -137,10 +138,7 @@ export function Emails() {
               </span>
             ) : null}
             {filteredCount != null && filteredCount > 0 ? (
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/80 px-2.5 py-1 text-[10px] font-medium text-slate-300"
-                title="Non-business mail (newsletters, social, marketing) was not imported"
-              >
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/80 px-2.5 py-1 text-[10px] font-medium text-slate-300">
                 Filtered {filteredCount} non-business
               </span>
             ) : null}
@@ -151,11 +149,11 @@ export function Emails() {
             <button
               type="button"
               disabled={!selected || running}
-              onClick={runQuote}
+              onClick={proposeAction}
               className="btn-primary"
             >
               <Play className="h-3.5 w-3.5" />
-              {running ? 'Running…' : 'Run quote'}
+              {running ? 'Staging…' : 'Propose action'}
             </button>
           </>
         }
@@ -196,7 +194,7 @@ export function Emails() {
             {emails.length === 0 ? (
               <EmptyState
                 title="Your inbox is ready"
-                description="Sync Gmail to pull business RFQs, or connect OAuth for live mail. Non-business mail is filtered automatically."
+                description="Sync to pull business mail across RFQs, POs, support, shipping, and more. Noise is filtered automatically."
                 icon={Mail}
                 actions={
                   <>
@@ -233,11 +231,15 @@ export function Emails() {
                         </div>
                       </div>
                       <div className="mt-0.5 truncate text-[13px] text-slate-300">{email.subject}</div>
-                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] tabular-nums text-slate-500">
-                        <span>{new Date(email.received_at).toLocaleString()}</span>
-                        <span className="text-cyan-500/80">
-                          Attention {(email.attention_score ?? 0).toFixed(0)}
-                        </span>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                        {email.intent ? (
+                          <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 font-medium text-violet-200">
+                            {(email.suggested_action?.intent_label || email.intent).replaceAll('_', ' ')}
+                          </span>
+                        ) : null}
+                        {email.suggested_action?.label ? (
+                          <span className="truncate text-cyan-500/90">{email.suggested_action.label}</span>
+                        ) : null}
                       </div>
                     </button>
                   </li>
@@ -257,9 +259,7 @@ export function Emails() {
                     <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                       <Badge status={selected.attention_label || 'Low'} />
                       <Badge status={selected.status} />
-                      <span className="text-[10px] tabular-nums text-slate-500">
-                        Score {(selected.attention_score ?? 0).toFixed(1)}
-                      </span>
+                      {selected.intent ? <Badge status={selected.intent} /> : null}
                     </div>
                     <h2 className="text-base font-semibold text-white">{selected.subject}</h2>
                     <p className="mt-1 text-xs text-slate-400">
@@ -267,6 +267,32 @@ export function Emails() {
                     </p>
                   </div>
                 </div>
+
+                {sa ? (
+                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-300">
+                      <Sparkles className="h-3 w-3" />
+                      Suggested action
+                    </div>
+                    <div className="text-sm font-medium text-slate-100">{sa.label}</div>
+                    {sa.actions?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {sa.actions.filter((a) => a !== 'await_human_approval').slice(0, 8).map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-md border border-slate-700 bg-slate-950/80 px-2 py-0.5 text-[10px] text-slate-400"
+                          >
+                            {a.replaceAll('_', ' ')}
+                          </span>
+                        ))}
+                        <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
+                          awaits human approval
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {selected.attention_meta?.reasons?.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {selected.attention_meta.reasons.map((r) => (
@@ -279,33 +305,25 @@ export function Emails() {
                     ))}
                   </div>
                 ) : null}
+
                 <pre className="whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/70 p-3.5 text-[13px] leading-relaxed text-slate-300">
                   {selected.body}
                 </pre>
-                {selected.intent ? (
-                  <div className="text-[11px] text-slate-500">
-                    Detected intent:{' '}
-                    <span className="font-medium text-cyan-300">
-                      {selected.intent.replaceAll('_', ' ')}
-                    </span>
-                  </div>
-                ) : null}
+
                 <div className="flex flex-wrap gap-2 border-t border-slate-800/80 pt-3">
-                  <button
-                    type="button"
-                    disabled={running}
-                    onClick={runQuote}
-                    className="btn-primary"
-                  >
+                  <button type="button" disabled={running} onClick={proposeAction} className="btn-primary">
                     <Play className="h-3.5 w-3.5" />
-                    {running ? 'Running…' : 'Run quote'}
+                    {running ? 'Staging…' : 'Propose action'}
                   </button>
+                  <Link to="/approvals" className="btn-secondary">
+                    Open approvals
+                  </Link>
                 </div>
               </div>
             ) : (
               <EmptyState
                 title="Select a message"
-                description="Choose an email from the list to preview and run a quote."
+                description="Choose an email to see intent, suggested actions, and stage a plan."
               />
             )}
           </div>

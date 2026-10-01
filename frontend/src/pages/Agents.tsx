@@ -1,36 +1,48 @@
-import { Bot, Shield, Database, Mail, Webhook } from 'lucide-react'
+import { Bot, Shield, Database, Mail, Webhook, Ticket, Sparkles } from 'lucide-react'
 import { Badge } from '../components/Badge'
 import { PageHeader } from '../components/PageHeader'
 
 const agents = [
   {
-    name: 'Quote Agent',
+    name: 'Intent Classifier',
     status: 'active',
-    desc: 'Classifies inbound RFQs, extracts line items, prices from your catalog, and drafts the quote plus reply email.',
+    desc: 'Classifies every business email into RFQ, PO, invoice, shipping, support, escalation, meeting, contract, change order, vendor onboarding, and more.',
+    icon: Sparkles,
+  },
+  {
+    name: 'Ops Action Planner',
+    status: 'active',
+    desc: 'Builds per-intent action plans: draft replies/quotes, stage CRM deals/contacts, tickets/tasks with due dates, KB refs, and escalate when Critical.',
     icon: Bot,
   },
   {
     name: 'Approval Gate',
     status: 'active',
-    desc: 'Holds outbound actions until a human reviews and edits the draft — nothing sends without approval.',
+    desc: 'Human approval before any outbound send, CRM create/update, or customer-facing ticket close. Selective apply flags per plan.',
     icon: Shield,
   },
   {
     name: 'CRM Writer',
     status: 'active',
-    desc: 'On approve: upserts the contact, creates a deal at Quote sent, and logs activity.',
+    desc: 'On approve: upserts contacts and creates deals when the staged plan includes CRM steps.',
     icon: Database,
+  },
+  {
+    name: 'Ticket Desk',
+    status: 'active',
+    desc: 'Opens support and escalation tickets from complaint / VIP / legal-ish intents after approval.',
+    icon: Ticket,
   },
   {
     name: 'Gmail Ingest',
     status: 'ready',
-    desc: 'Sync pulls business mail into Inbox. Connect Google OAuth for live Gmail, or use offline mode until credentials are set.',
+    desc: 'Sync pulls business mail, filters noise, classifies intent, and stages plans. OAuth optional; offline mode included.',
     icon: Mail,
   },
   {
     name: 'Webhook Ingest',
     status: 'active',
-    desc: 'Accepts inbound email and quote triggers from n8n or any orchestrator. Optional shared-secret authentication.',
+    desc: 'n8n or any orchestrator can POST inbound email and optionally trigger the full ops workflow.',
     icon: Webhook,
   },
 ]
@@ -41,7 +53,7 @@ export function Agents() {
       <PageHeader
         eyebrow="Autonomy layer"
         title="AI Agents"
-        description="Autonomous workers with human approval — not a chatbot"
+        description="Agency-grade inbound ops workers — automate up to the human gate"
       />
       <div className="grid gap-3 md:grid-cols-2">
         {agents.map((a) => (

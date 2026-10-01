@@ -9,6 +9,7 @@ import type {
   Product,
   QuoteRunResponse,
   Task,
+  Ticket,
   WebhookInfo,
 } from '../lib/types'
 
@@ -34,6 +35,7 @@ export const api = {
       brand: string
       gmail_mode?: string
       n8n_secret_required?: boolean
+      version?: string
     }>('/health'),
   stats: () => request<DashboardStats>('/dashboard/stats'),
   emails: (opts?: { priority?: string; sort?: string }) => {
@@ -56,6 +58,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  runOps: (body: { email_id?: number; message_id?: string; auto_stage?: boolean } = {}) =>
+    request<QuoteRunResponse>('/workflows/ops/run', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   approvals: (status?: string) =>
     request<Approval[]>(`/approvals${status ? `?status=${status}` : ''}`),
   approval: (id: number) => request<Approval>(`/approvals/${id}`),
@@ -66,6 +73,7 @@ export const api = {
       review_note?: string
       quote_draft?: unknown
       email_draft?: unknown
+      apply_flags?: Record<string, boolean>
     },
   ) =>
     request<Approval>(`/approvals/${id}/approve`, {
@@ -82,6 +90,8 @@ export const api = {
   products: () => request<Product[]>('/crm/products'),
   tasks: (status?: string) =>
     request<Task[]>(`/tasks${status ? `?status=${status}` : ''}`),
+  tickets: (status?: string) =>
+    request<Ticket[]>(`/tickets${status ? `?status=${status}` : ''}`),
 }
 
 export const apiBase = BASE

@@ -4,6 +4,7 @@ import {
   Inbox,
   ShieldCheck,
   Users,
+  Ticket,
   CheckSquare,
   Bot,
   Workflow,
@@ -17,6 +18,7 @@ const nav = [
   { to: '/emails', label: 'Inbox', icon: Inbox },
   { to: '/approvals', label: 'Approvals', icon: ShieldCheck },
   { to: '/crm', label: 'CRM', icon: Users },
+  { to: '/tickets', label: 'Tickets', icon: Ticket },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/agents', label: 'AI Agents', icon: Bot },
   { to: '/workflows', label: 'Workflows', icon: Workflow },
@@ -82,7 +84,7 @@ export function Layout() {
         <header className="flex h-12 items-center justify-between border-b border-slate-800/90 bg-slate-950/50 px-5 backdrop-blur-md">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Activity className="h-3.5 w-3.5 text-cyan-500/80" />
-            Quote automation · human-in-the-loop
+            Multi-intent ops · human-in-the-loop
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">

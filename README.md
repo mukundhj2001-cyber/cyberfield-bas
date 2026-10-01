@@ -1,12 +1,12 @@
 # Cyberfield Business Automation System (Cyberfield BAS)
 
-Autonomous **business operations** agent / workflow platform — **not a chatbot**.
+Agency-grade **inbound business ops** package — **not a chatbot**, not quote-only.
 
-Flagship demo for sample tenant **Northwind Industrial**:
+Sample tenant **Northwind Industrial**:
 
-> Customer email requesting a quotation → classify/extract → check pricing DB → draft quote + email → **human approval** → on approve: log send, update CRM, assign task.
+> Inbound B2B email → business filter → attention rank → **intent classify** → extract → **action plan** (draft reply/quote, stage CRM, ticket/task, escalate if Critical) → **human approval** → apply selected steps (mock send, CRM, tickets, tasks).
 
-Built as a portfolio slice for [Cyberfield](https://github.com/mukundhj2001-cyber) / ops-automation demos.
+Built as a portfolio product slice for [Cyberfield](https://github.com/mukundhj2001-cyber).
 
 ## Stack
 
@@ -14,7 +14,7 @@ Built as a portfolio slice for [Cyberfield](https://github.com/mukundhj2001-cybe
 |--------|------|
 | Backend | FastAPI · SQLAlchemy · SQLite (default) |
 | Frontend | React · Vite · TypeScript · Tailwind v4 |
-| Workflow | `quote_from_email` state machine (LangGraph-shaped stages) |
+| Workflow | Multi-intent `ops` planner + `quote_from_email` (LangGraph-shaped stages) |
 | LLM | OpenAI / Anthropic when keyed; otherwise **deterministic mock** |
 | Ingest | **Mock Gmail sync** (default) · optional Google OAuth · **n8n webhooks** |
 | Ranking | Attention score + Critical/High/Medium/Low on **business** mail |
@@ -72,14 +72,12 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ### 3. Demo script (mock LLM + mock Gmail, offline)
 
-1. **Inbox** — **business mail only**, sorted by **attention** (Critical → Low). Click **Sync Gmail** to import mock RFQs (noise digests are filtered).
-2. Use the **Priority** chips to filter Critical / High / Medium / Low.
-3. Select a high-attention RFQ → **Run quote workflow**.
-4. **Approvals** — review line items / edit qty or email body.
-5. Click **Approve & send (mock)**.
-6. **CRM** — contact + deal at `quote_sent`; **Tasks** — follow-up assigned to Sales Ops.
-7. **Dashboard** — activity feed shows `gmail_sync` / `email_sent` / `crm_update` / `task_created`.
-8. **Workflows** — copy n8n webhook URLs + sample payload.
+1. **Inbox** — business mail only, sorted by attention. **Sync inbox** imports varied intents (RFQ, PO, shipping, support, meeting, invoice, …); noise filtered; each message classified with a suggested action.
+2. Sync **auto-stages** action plans into **Approvals** (or click **Propose action** on a message).
+3. **Approvals** — unified queue for quotes **and** reply drafts; edit body/qty; selectively apply send / CRM / ticket / tasks.
+4. **Approve & apply** — mock send + CRM / tickets / tasks per flags.
+5. **CRM / Tickets / Tasks** update; **Dashboard** shows multi-action pipeline + intent mix.
+6. **Workflows** — n8n webhook URLs (`run_ops_workflow: true`).
 
 API-only path:
 
@@ -167,10 +165,10 @@ Debug: `GET /emails?include_non_business=true` lists hidden rows if any were mar
 
 | Capability | Status |
 |------------|--------|
-| Inbox UI + quote workflow + approvals | **Real** (API + UI) |
+| Inbox UI + multi-intent ops + approvals | **Real** (API + UI) |
 | Attention ranking | **Real** (heuristic scorer, business mail only) |
 | Business filter | **Real** (heuristics; noise not imported) |
-| Pricing catalog / CRM / tasks writes | **Real** (SQLite) |
+| Pricing catalog / CRM / tickets / tasks | **Real** (SQLite; writes on approve) |
 | LLM extraction | **Mock by default**; optional OpenAI/Anthropic |
 | Gmail sync | **Mock by default** (seeded pool); optional OAuth |
 | Outbound email send | **Mock** (activity log `email_sent`) |
@@ -241,11 +239,35 @@ Import `examples/n8n/gmail-to-bas.json` into n8n (Gmail Trigger → HTTP Request
 - `POST /emails/recompute-attention`
 - `GET /emails/{id}`, `POST /emails/{id}/recompute-attention`
 - `GET /inbox/gmail/status`, `POST /inbox/sync` (alias `POST /gmail/sync`)
-- `POST /workflows/quote/run`
-- `GET /approvals`, `POST /approvals/{id}/approve|reject`
+- `POST /workflows/ops/run`, `POST /workflows/quote/run` (alias)
+- `GET /approvals`, `POST /approvals/{id}/approve|reject` (selective `apply_flags`)
 - `GET /crm/contacts`, `/crm/deals`, `/crm/products`
-- `GET /tasks`
+- `GET /tasks`, `GET /tickets`
 - `GET /webhooks/n8n/info`, `POST /webhooks/n8n/email`, `POST /webhooks/n8n/trigger-quote`
+
+
+## Intent → action matrix
+
+On sync/ingest every business email is classified. Sync auto-stages a full action plan into **Approvals** (human gate). Nothing customer-facing runs until approve.
+
+| Intent | Proposed actions (staged) | On approve |
+|--------|---------------------------|------------|
+| `rfq_quote` | Draft quote + reply, catalog price lookup, stage CRM deal/contact, follow-up task | Send · CRM · tasks |
+| `purchase_order` | Extract PO refs, draft order ack, stage CRM deal, fulfillment task | Send · CRM · tasks |
+| `invoice_payment` | Extract amounts/refs, draft finance ack, finance task | Send · tasks |
+| `shipping_status` | Draft status reply, logistics task, lead-time KB refs | Send · tasks |
+| `product_info` | Catalog/COA/datasheet reply, KB refs, sales task | Send · tasks |
+| `support_complaint` | Draft apology, support ticket, QA task | Send · ticket · tasks |
+| `escalation` | Careful reply, escalated ticket, manager task | Send · ticket · tasks |
+| `meeting_request` | Scheduling reply, calendar note task, CRM contact | Send · CRM · tasks |
+| `contract_partnership` | Ack reply, legal/ops review task, CRM contact | Send · CRM · tasks |
+| `change_order` | Amended quote + reply, CRM update, follow-up | Send · CRM · tasks |
+| `vendor_onboarding` | Onboarding reply, compliance checklist task | Send · CRM · tasks |
+| `general_ops` / `other_business` | Draft reply + review task | Send · tasks |
+
+**Always:** attention rank + business filter. **Approval-gated:** outbound send, CRM create/update, ticket close.
+
+Live matrix also at `GET /dashboard/stats` → `intent_matrix`.
 
 ## Build checks
 

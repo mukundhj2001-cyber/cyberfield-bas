@@ -17,10 +17,7 @@ def gmail_status():
 
 @router.post("/inbox/sync", response_model=GmailSyncResponse)
 async def sync_gmail_inbox(db: Session = Depends(get_db)):
-    """Sync Gmail into inbox. Uses mock pool unless OAuth credentials are configured.
-
-    After import, attention scores are recomputed for the full inbox.
-    """
+    """Sync Gmail into inbox. Classifies intents and stages action plans for approval."""
     result = await sync_inbox(db)
     return GmailSyncResponse(
         mode=result["mode"],
@@ -28,6 +25,8 @@ async def sync_gmail_inbox(db: Session = Depends(get_db)):
         skipped=result["skipped"],
         filtered=int(result.get("filtered") or 0),
         filtered_subjects=list(result.get("filtered_subjects") or []),
+        classified=int(result.get("classified") or 0),
+        plans_staged=int(result.get("plans_staged") or 0),
         emails=[EmailOut.model_validate(e) for e in result["emails"]],
         status=GmailStatusOut.model_validate(result["status"]),
         warning=result.get("warning"),
@@ -35,7 +34,6 @@ async def sync_gmail_inbox(db: Session = Depends(get_db)):
     )
 
 
-# Alias path for discoverability
 @router.post("/gmail/sync", response_model=GmailSyncResponse, include_in_schema=False)
 async def sync_gmail_alias(db: Session = Depends(get_db)):
     return await sync_gmail_inbox(db)

@@ -39,7 +39,7 @@ export function Crm() {
       <PageHeader
         eyebrow="Pipeline"
         title="CRM"
-        description="Contacts and deals populate when a quote is approved"
+        description="Contacts and deals populate when you approve CRM steps in an action plan"
       />
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -83,7 +83,7 @@ export function Crm() {
                     <td colSpan={5}>
                       <EmptyState
                         title="No deals yet"
-                        description="Approve a quote to create a CRM deal at the Quote sent stage."
+                        description="Approve a quote, PO, or change-order plan to create a CRM deal."
                         icon={Users}
                         actions={
                           <Link to="/approvals" className="btn-primary">

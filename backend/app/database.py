@@ -45,14 +45,30 @@ def ensure_schema() -> None:
             ("attention_meta", "JSON"),
             ("business_relevant", "BOOLEAN DEFAULT 1"),
             ("business_meta", "JSON"),
+            ("suggested_action", "JSON"),
+        ],
+        "approvals": [
+            ("action_type", "VARCHAR(64)"),
+            ("title", "VARCHAR(255)"),
+            ("action_plan", "JSON"),
+            ("apply_defaults", "JSON"),
+        ],
+        "tasks": [
+            ("kind", "VARCHAR(64) DEFAULT 'general'"),
+            ("related_ticket_id", "INTEGER"),
         ],
     }
     with engine.begin() as conn:
         for table, cols in additions.items():
-            existing = {
-                row[1]
-                for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
-            }
+            try:
+                existing = {
+                    row[1]
+                    for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                }
+            except Exception:  # noqa: BLE001
+                continue
+            if not existing:
+                continue
             for name, ddl in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))

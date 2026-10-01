@@ -1,17 +1,14 @@
 """Gmail ingest — mock sync by default; optional Google OAuth when credentials are set.
 
-Mock mode injects demo Gmail-like messages into the inbox so the portfolio demo
-works offline without secrets. Real mode uses a refresh token + client credentials
-to list recent inbox messages via Gmail API (messages.list + messages.get).
-
-OAuth setup (no secrets committed): see README "Gmail OAuth" and
-scripts/gmail_oauth_refresh_token.py.
+On every successful business import: classify intent + suggested action.
+Optional auto-stage of full ops plans via AUTO_STAGE_ON_SYNC (default on for mock demos).
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -20,6 +17,7 @@ from uuid import uuid4
 import httpx
 from sqlalchemy.orm import Session
 
+from app.agent.ops_workflow import classify_email_on_ingest, run_ops_plan
 from app.config import get_settings
 from app.models import ActivityLog, Email
 from app.services.attention import apply_attention, catalog_prices, recompute_all
@@ -28,11 +26,9 @@ from app.services.business_relevance import should_import_message
 logger = logging.getLogger(__name__)
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
-
-# Pool of demo messages that "arrive" on each mock sync (message_id must be stable
-# so repeated syncs are idempotent). Content is varied for attention ranking demos.
 _MOCK_NOW = datetime.now(timezone.utc)
 
+# Varied B2B intents for agency-grade demo coverage
 MOCK_GMAIL_POOL: list[dict[str, Any]] = [
     {
         "message_id": "gmail-mock-004-pump-rfq",
@@ -40,13 +36,10 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Jordan Blake",
         "subject": "URGENT RFQ — Centrifugal Process Pump C2 × 2 — ASAP",
         "body": (
-            "Hello Northwind,\n\n"
-            "URGENT — production halted. Please quote ASAP:\n"
+            "Hello Northwind,\n\nURGENT — production halted. Please quote ASAP:\n"
             "- 2 × Centrifugal Process Pump C2 (NW-PMP-C2)\n"
             "- 4 × Mechanical Seal Rebuild Kit (NW-SEAL-KIT)\n\n"
-            "Need delivery to Riverbend Plants, Cleveland OH within 3 weeks.\n"
-            "This is time-sensitive — escalate if needed.\n\n"
-            "Jordan Blake\nPurchasing"
+            "Need delivery to Riverbend Plants, Cleveland OH within 3 weeks.\n\nJordan Blake\nPurchasing"
         ),
         "received_at": _MOCK_NOW - timedelta(hours=1),
     },
@@ -56,8 +49,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Sam Ortiz",
         "subject": "RFQ: Conveyor idler rollers — 80 units",
         "body": (
-            "Team,\n\n"
-            "Requesting quotation for 80 × Conveyor Idler Roller 4-inch (NW-CNV-IDL).\n"
+            "Team,\n\nRequesting quotation for 80 × Conveyor Idler Roller 4-inch (NW-CNV-IDL).\n"
             "Also include unit price for NW-BRG-6205 bearings (qty 50) as optional add-on.\n\n"
             "Thanks,\nSam Ortiz\nCoastal Aggregates"
         ),
@@ -69,10 +61,8 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Marcus Chen",
         "subject": "Follow-up: additional VFD for line 2",
         "body": (
-            "Hi again,\n\n"
-            "Can you also quote 2 × 7.5 HP Variable Frequency Drive (NW-VFD-7)\n"
-            "for our second packaging line?\n\n"
-            "Marcus Chen\nSummit Packaging LLC"
+            "Hi again,\n\nCan you also quote 2 × 7.5 HP Variable Frequency Drive (NW-VFD-7)\n"
+            "for our second packaging line?\n\nMarcus Chen\nSummit Packaging LLC"
         ),
         "received_at": _MOCK_NOW - timedelta(hours=12),
     },
@@ -82,11 +72,9 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_name": "Dana Okonkwo",
         "subject": "Escalation: overdue quote on NW-MTR-3HP — CEO reviewing suppliers",
         "body": (
-            "Northwind,\n\n"
-            "This is an escalation / final notice. We requested a quote two weeks ago for\n"
+            "Northwind,\n\nThis is an escalation / final notice. We requested a quote two weeks ago for\n"
             "12 × NW-MTR-3HP motors (~$8,200). Our CEO is reviewing suppliers Friday.\n"
-            "Please respond urgently or we will cancel the RFQ.\n\n"
-            "Dana Okonkwo\nVP Operations — Midwest Steel"
+            "Please respond urgently or we will cancel the RFQ.\n\nDana Okonkwo\nVP Operations — Midwest Steel"
         ),
         "received_at": _MOCK_NOW - timedelta(hours=4),
     },
@@ -94,26 +82,110 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "message_id": "gmail-mock-008-po-confirm",
         "from_address": "buyer@riverbend-plants.example",
         "from_name": "Jordan Blake",
-        "subject": "PO-4412 released — please confirm shipment window",
+        "subject": "PO-4412 released — please confirm order",
         "body": (
-            "Hello,\n\n"
-            "Purchase order PO-4412 is released for the pump package.\n"
-            "Please confirm shipment / delivery ETA to Cleveland OH.\n\n"
-            "Jordan Blake\nPurchasing"
+            "Hello,\n\nPurchase order PO-4412 is released for the pump package ($4,860).\n"
+            "Please confirm order acknowledgment and shipment window to Cleveland OH.\n\nJordan Blake\nPurchasing"
         ),
         "received_at": _MOCK_NOW - timedelta(days=1),
     },
-    # Noise samples — business filter drops these (never imported)
+    {
+        "message_id": "gmail-mock-009-shipping",
+        "from_address": "recv@lakeside-mfg.example",
+        "from_name": "Priya Nair",
+        "subject": "Where is shipment for PO-3890? Need tracking / ETA",
+        "body": (
+            "Hi logistics,\n\nCan you share tracking and delivery status for PO-3890?\n"
+            "Carrier was supposed to deliver last week. Lead time update appreciated.\n\nPriya Nair\nLakeside Manufacturing"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=6),
+    },
+    {
+        "message_id": "gmail-mock-010-complaint",
+        "from_address": "qa@summit-packaging.example",
+        "from_name": "Alex Rivera",
+        "subject": "Quality complaint — damaged seal kit, need RMA",
+        "body": (
+            "We received NW-SEAL-KIT lot that arrived damaged / defective.\n"
+            "This is unacceptable for our line. Please open an RMA and advise replacement or refund.\n\nAlex Rivera\nQA — Summit Packaging"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=3),
+    },
+    {
+        "message_id": "gmail-mock-011-meeting",
+        "from_address": "proc@harbor-logistics.example",
+        "from_name": "Elena Rossi",
+        "subject": "Demo / discovery call next week?",
+        "body": (
+            "Good afternoon,\n\nWe would like to schedule a meeting / product demo for conveyor idlers and pumps.\n"
+            "Available Tuesday 2pm or Thursday morning. Zoom preferred.\n\nElena Rossi\nHarbor Logistics"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=10),
+    },
+    {
+        "message_id": "gmail-mock-012-invoice",
+        "from_address": "ap@coastal-agg.example",
+        "from_name": "Finance Desk",
+        "subject": "Remittance advice — INV-2201 paid $3,240 via ACH",
+        "body": (
+            "Hello AR team,\n\nPlease find remittance for invoice INV-2201.\n"
+            "Amount due paid: $3,240.00 USD via ACH today. PO-4100 referenced.\n\nAccounts Payable\nCoastal Aggregates"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=9),
+    },
+    {
+        "message_id": "gmail-mock-013-catalog",
+        "from_address": "eng@midwest-steel.example",
+        "from_name": "Chris Patel",
+        "subject": "Datasheet + COA request for NW-BRG-6205",
+        "body": (
+            "Please send the latest datasheet and certificate of analysis (COA) for Industrial Ball Bearing 6205-2RS.\n"
+            "Also confirm current availability / in-stock quantity.\n\nChris Patel\nEngineering"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=14),
+    },
+    {
+        "message_id": "gmail-mock-014-change-order",
+        "from_address": "ops@summit-packaging.example",
+        "from_name": "Marcus Chen",
+        "subject": "Change order — amend quote Q-prior: reduce VFD qty to 2",
+        "body": (
+            "Please amend our previous quote / change order:\n"
+            "Reduce 7.5 HP Variable Frequency Drive (NW-VFD-7) from 4 units to 2 units.\n"
+            "Keep 3HP motors as quoted. Send revised quotation.\n\nMarcus Chen"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=7),
+    },
+    {
+        "message_id": "gmail-mock-015-nda",
+        "from_address": "legal@harbor-logistics.example",
+        "from_name": "Morgan Lee",
+        "subject": "NDA + partnership discussion — MSA draft attached",
+        "body": (
+            "Northwind team,\n\nWe would like to execute a non-disclosure agreement (NDA) and explore a "
+            "distribution partnership. Please review our MSA draft and return redlines.\n\nMorgan Lee\nLegal / Partnerships"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=20),
+    },
+    {
+        "message_id": "gmail-mock-016-vendor",
+        "from_address": "vendors@lakeside-mfg.example",
+        "from_name": "Supplier Portal",
+        "subject": "Vendor onboarding — please complete compliance packet / W-9",
+        "body": (
+            "Hello,\n\nTo remain an approved vendor please complete supplier onboarding:\n"
+            "- W-9 tax form\n- Insurance certificate\n- Compliance attestations\n"
+            "Portal link will follow. Reply when ready.\n\nLakeside Vendor Management"
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=18),
+    },
+    # Noise — filtered
     {
         "message_id": "gmail-mock-noise-reddit",
         "from_address": "noreply@redditmail.com",
         "from_name": "Reddit",
         "subject": "r/industrialengineering — top posts this week",
-        "body": (
-            "Your Reddit digest of popular posts.\n"
-            "Unsubscribe anytime. View in browser.\n"
-            "No action required."
-        ),
+        "body": "Your Reddit digest. Unsubscribe anytime. No action required.",
         "received_at": _MOCK_NOW - timedelta(hours=3),
         "expect_filtered": True,
     },
@@ -122,15 +194,16 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "from_address": "messages-noreply@linkedin.com",
         "from_name": "LinkedIn",
         "subject": "You have 12 new notifications — weekly roundup",
-        "body": (
-            "See who viewed your profile and sponsored marketing tips.\n"
-            "Unsubscribe · Manage preferences\n"
-            "This is a promotional LinkedIn digest."
-        ),
+        "body": "Sponsored marketing tips. Unsubscribe · Manage preferences.",
         "received_at": _MOCK_NOW - timedelta(hours=5),
         "expect_filtered": True,
     },
 ]
+
+
+def _auto_stage_enabled() -> bool:
+    raw = os.environ.get("AUTO_STAGE_ON_SYNC", "true").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def gmail_connection_status() -> dict[str, Any]:
@@ -143,18 +216,15 @@ def gmail_connection_status() -> dict[str, Any]:
     requested = (settings.gmail_mode or "mock").strip().lower()
     if requested == "oauth" and real_ready:
         mode = "oauth"
-        reason = None
         detail = "Live Gmail API via refresh token (messages.list + get)"
     elif requested == "oauth" and not real_ready:
         mode = "mock"
-        reason = (
+        detail = (
             "GMAIL_MODE=oauth but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / "
             "GOOGLE_REFRESH_TOKEN incomplete — using mock"
         )
-        detail = reason
     else:
         mode = "mock"
-        reason = None
         detail = "Demo sync injects seeded Gmail-like messages (no secrets required)"
 
     return {
@@ -181,23 +251,40 @@ async def sync_inbox(db: Session) -> dict[str, Any]:
     if status["mode"] == "oauth":
         try:
             result = await _sync_oauth(db)
-        except Exception as exc:  # noqa: BLE001 — fall back so demos never brick
+        except Exception as exc:  # noqa: BLE001
             logger.exception("Gmail OAuth sync failed; falling back to mock")
-            result = _sync_mock(db)
+            result = await _sync_mock(db)
             result["warning"] = f"OAuth sync failed ({exc}); used mock instead"
             result["mode"] = "mock"
     else:
-        result = _sync_mock(db)
+        result = await _sync_mock(db)
 
-    # Age-sensitive factors: refresh scores for the whole inbox after sync
     scored = recompute_all(db)
     result["attention_rescored"] = scored
     result["status"] = gmail_connection_status()
-    # Refresh ORM instances after recompute
     if result.get("emails"):
         ids = [e.id for e in result["emails"]]
         result["emails"] = db.query(Email).filter(Email.id.in_(ids)).all() if ids else []
     return result
+
+
+async def _stage_plan(db: Session, email: Email) -> bool:
+    """Stage full ops plan for approval (email already classified)."""
+    from app.models import Approval
+
+    existing = (
+        db.query(Approval)
+        .filter(Approval.email_id == email.id, Approval.status == "pending")
+        .first()
+    )
+    if existing:
+        return False
+    try:
+        await run_ops_plan(db, email_id=email.id, auto_stage=True)
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("Auto-stage failed for email %s", email.id)
+        return False
 
 
 def _persist_new_email(
@@ -221,7 +308,6 @@ def _try_import_fields(
     fields: dict[str, Any],
     catalog: dict[str, float],
 ) -> tuple[Email | None, dict[str, Any] | None]:
-    """Classify then persist only business-relevant mail. Returns (email|None, filter_meta)."""
     ok, classification = should_import_message(
         subject=fields.get("subject") or "",
         body=fields.get("body") or "",
@@ -236,12 +322,15 @@ def _try_import_fields(
     return email, meta
 
 
-def _sync_mock(db: Session) -> dict[str, Any]:
+async def _sync_mock(db: Session) -> dict[str, Any]:
     created: list[Email] = []
     skipped = 0
     filtered = 0
     filtered_subjects: list[str] = []
+    classified = 0
+    plans_staged = 0
     catalog = catalog_prices(db)
+    stage = _auto_stage_enabled()
     for row in MOCK_GMAIL_POOL:
         existing = db.query(Email).filter(Email.message_id == row["message_id"]).first()
         if existing:
@@ -261,13 +350,20 @@ def _sync_mock(db: Session) -> dict[str, Any]:
         if email is None:
             filtered += 1
             filtered_subjects.append(row["subject"][:80])
-            logger.info(
-                "Filtered non-business mock message %s (%s)",
-                row["message_id"],
-                (meta or {}).get("reasons"),
-            )
             continue
+        db.flush()
         created.append(email)
+
+    db.commit()
+    for email in created:
+        await classify_email_on_ingest(db, email)
+        classified += 1
+    db.commit()
+
+    if stage:
+        for email in list(created):
+            if await _stage_plan(db, email):
+                plans_staged += 1
 
     meta_common = {
         "mode": "mock",
@@ -275,26 +371,20 @@ def _sync_mock(db: Session) -> dict[str, Any]:
         "skipped": skipped,
         "filtered": filtered,
         "filtered_subjects": filtered_subjects,
+        "classified": classified,
+        "plans_staged": plans_staged,
     }
-    if created or filtered:
-        db.add(
-            ActivityLog(
-                kind="gmail_sync",
-                message=(
-                    f"Mock Gmail sync imported {len(created)} business message(s)"
-                    + (f", filtered {filtered} non-business" if filtered else "")
-                ),
-                meta={**meta_common, "message_ids": [e.message_id for e in created]},
-            )
+    db.add(
+        ActivityLog(
+            kind="gmail_sync",
+            message=(
+                f"Mock Gmail sync imported {len(created)} business message(s)"
+                + (f", filtered {filtered} non-business" if filtered else "")
+                + (f", staged {plans_staged} action plan(s)" if plans_staged else "")
+            ),
+            meta={**meta_common, "message_ids": [e.message_id for e in created]},
         )
-    else:
-        db.add(
-            ActivityLog(
-                kind="gmail_sync",
-                message="Mock Gmail sync — inbox already up to date",
-                meta=meta_common,
-            )
-        )
+    )
     db.commit()
     for e in created:
         db.refresh(e)
@@ -305,6 +395,8 @@ def _sync_mock(db: Session) -> dict[str, Any]:
         "skipped": skipped,
         "filtered": filtered,
         "filtered_subjects": filtered_subjects,
+        "classified": classified,
+        "plans_staged": plans_staged,
         "emails": created,
         "status": gmail_connection_status(),
     }
@@ -322,7 +414,10 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
     skipped = 0
     filtered = 0
     filtered_subjects: list[str] = []
+    classified = 0
+    plans_staged = 0
     catalog = catalog_prices(db)
+    stage = _auto_stage_enabled()
     for msg in messages:
         mid = f"gmail-{msg['id']}"
         existing = db.query(Email).filter(Email.message_id == mid).first()
@@ -347,19 +442,31 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
             continue
         created.append(email)
 
+    db.commit()
+    for email in created:
+        await classify_email_on_ingest(db, email)
+        classified += 1
+    db.commit()
+    if stage:
+        for email in list(created):
+            if await _stage_plan(db, email):
+                plans_staged += 1
+
     db.add(
         ActivityLog(
             kind="gmail_sync",
             message=(
                 f"Gmail OAuth sync imported {len(created)} business message(s)"
                 + (f", filtered {filtered} non-business" if filtered else "")
+                + (f", staged {plans_staged} action plan(s)" if plans_staged else "")
             ),
             meta={
                 "mode": "oauth",
                 "imported": len(created),
                 "skipped": skipped,
                 "filtered": filtered,
-                "filtered_subjects": filtered_subjects,
+                "classified": classified,
+                "plans_staged": plans_staged,
             },
         )
     )
@@ -373,6 +480,8 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
         "skipped": skipped,
         "filtered": filtered,
         "filtered_subjects": filtered_subjects,
+        "classified": classified,
+        "plans_staged": plans_staged,
         "emails": created,
         "status": gmail_connection_status(),
     }
@@ -390,8 +499,7 @@ async def _refresh_access_token(client_id: str, client_secret: str, refresh_toke
             },
         )
         resp.raise_for_status()
-        data = resp.json()
-        return data["access_token"]
+        return resp.json()["access_token"]
 
 
 async def _list_gmail_messages(access_token: str, max_results: int = 25) -> list[dict[str, Any]]:
@@ -441,7 +549,6 @@ def _extract_body(payload: dict[str, Any]) -> str:
 
 
 def _parse_from(value: str) -> tuple[str, str]:
-    # "Name <email@x.com>" or bare email
     if "<" in value and ">" in value:
         name = value.split("<", 1)[0].strip().strip('"')
         addr = value.split("<", 1)[1].split(">", 1)[0].strip()
@@ -480,7 +587,7 @@ def _parse_gmail_message(msg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def ingest_external_email(
+async def ingest_external_email(
     db: Session,
     *,
     from_address: str,
@@ -491,13 +598,7 @@ def ingest_external_email(
     message_id: str | None = None,
     source: str = "n8n",
 ) -> Email | dict[str, Any]:
-    """Create an inbox row from an external webhook (n8n, etc.).
-
-    Returns Email on import, or a dict ``{"filtered": True, ...}`` when the
-    business-relevance classifier drops the message (noise is not persisted).
-    """
     mid = message_id or f"{source}-{uuid4().hex[:16]}"
-    # Stable-ish dedupe if caller re-posts same content without id
     if not message_id:
         digest = hashlib.sha1(f"{from_address}|{subject}|{body[:200]}".encode()).hexdigest()[:16]
         mid = f"{source}-{digest}"
@@ -526,12 +627,7 @@ def ingest_external_email(
             ActivityLog(
                 kind="webhook_filtered",
                 message=f"Filtered non-business ingest via {source}: {subject[:80]}",
-                meta={
-                    "source": source,
-                    "from": from_address,
-                    "message_id": mid,
-                    "business": meta,
-                },
+                meta={"source": source, "from": from_address, "message_id": mid, "business": meta},
             )
         )
         db.commit()
@@ -543,6 +639,8 @@ def ingest_external_email(
             "business_meta": meta,
         }
 
+    db.flush()
+    await classify_email_on_ingest(db, email)
     db.add(
         ActivityLog(
             kind="webhook_ingest",
@@ -551,6 +649,7 @@ def ingest_external_email(
                 "source": source,
                 "from": from_address,
                 "message_id": mid,
+                "intent": email.intent,
                 "attention_score": email.attention_score,
                 "attention_label": email.attention_label,
                 "business": meta,

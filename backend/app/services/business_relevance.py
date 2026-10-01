@@ -35,6 +35,14 @@ POSITIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
     (re.compile(r"\bplease\s+quote\b|\brequest(ing)?\s+(a\s+)?(quot|pricing|price)\b", re.I), 24, "pricing request"),
     (re.compile(r"\b(line\s+items?|bill\s+of\s+materials|BOM)\b", re.I), 10, "line items/BOM"),
     (re.compile(r"\b(ops|operations|purchasing|sourcing)\b", re.I), 8, "ops/purchasing"),
+    (re.compile(r"\b(meeting|schedule|calendly|discovery\s+call|book\s+a\s+(call|demo|time)|zoom)\b", re.I), 14, "meeting/demo"),
+    (re.compile(r"\b(NDA|non[- ]disclosure|master\s+(service|supply)\s+agreement|\bMSA\b|partnership)\b", re.I), 16, "NDA/MSA/partnership"),
+    (re.compile(r"\b(RMA|return\s+authorization|quality\s+(issue|complaint)|defective|warranty)\b", re.I), 16, "RMA/quality"),
+    (re.compile(r"\b(tracking|ETA|in\s+transit|lead\s+time)\b", re.I), 12, "tracking/ETA"),
+    (re.compile(r"\b(datasheet|data\s+sheet|COA|certificate\s+of\s+analysis|availability)\b", re.I), 14, "datasheet/COA"),
+    (re.compile(r"\b(vendor\s+onboarding|supplier\s+onboarding|W-?9|compliance\s+(packet|docs)|insurance\s+certificate)\b", re.I), 16, "vendor compliance"),
+    (re.compile(r"\b(remittance|accounts\s+payable|ACH|wire\s+transfer)\b", re.I), 14, "payment/remittance"),
+    (re.compile(r"\b(change\s+order|amend(ed|ment)?\s+quote)\b", re.I), 16, "change order"),
 ]
 
 # --- Negative: social / marketing / digests / personal clutter ---

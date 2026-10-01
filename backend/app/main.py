@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent.llm import resolve_llm_mode
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, ensure_schema
-from app.routers import approvals, crm, dashboard, emails, inbox, tasks, webhooks, workflows
+from app.routers import approvals, crm, dashboard, emails, inbox, tasks, tickets, webhooks, workflows
 from app.seed import seed_if_empty
 from app.services.attention import recompute_all
 from app.services.business_relevance import reclassify_existing_emails
@@ -20,9 +20,7 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         seed_if_empty(db)
-        # Mark legacy noise (newsletters etc.) and drop from default inbox
         reclassify_existing_emails(db)
-        # Ensure existing DBs (pre-ranking) get scores on boot
         recompute_all(db)
     finally:
         db.close()
@@ -32,8 +30,12 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title="Cyberfield Business Automation System",
-    description="Autonomous business operations agent — quote-from-email flagship workflow.",
-    version="0.4.0",
+    description=(
+        "Agency-grade inbound ops package — classify B2B email intents, "
+        "auto-extract, draft replies/quotes, stage CRM/tickets/tasks, "
+        "human approval before any outbound send or CRM write."
+    ),
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -53,6 +55,7 @@ app.include_router(workflows.router)
 app.include_router(approvals.router)
 app.include_router(crm.router)
 app.include_router(tasks.router)
+app.include_router(tickets.router)
 app.include_router(webhooks.router)
 
 
@@ -67,4 +70,6 @@ def health():
         "gmail_mode": gmail["mode"],
         "gmail_connected": gmail["connected"],
         "n8n_secret_required": bool(settings.n8n_webhook_secret),
+        "version": "0.5.0",
+        "capabilities": "multi_intent_ops",
     }

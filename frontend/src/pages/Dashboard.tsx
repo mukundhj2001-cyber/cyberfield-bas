@@ -11,6 +11,7 @@ import {
   Mail,
   Workflow,
   Sparkles,
+  Ticket,
 } from 'lucide-react'
 import { api } from '../api/client'
 import type { DashboardStats } from '../lib/types'
@@ -26,6 +27,7 @@ const kindMeta: Record<string, { label: string; icon: typeof Bot }> = {
   email_sent: { label: 'Email sent', icon: Mail },
   crm_update: { label: 'CRM update', icon: Users },
   task_created: { label: 'Task created', icon: CheckSquare },
+  ticket_created: { label: 'Ticket created', icon: Ticket },
   workflow: { label: 'Workflow', icon: Bot },
 }
 
@@ -49,7 +51,9 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <ErrorBanner message={`Unable to reach the API (${error}). Confirm the backend is running on port 8000.`} />
+      <ErrorBanner
+        message={`Unable to reach the API (${error}). Confirm the backend is running on port 8000.`}
+      />
     )
   }
 
@@ -57,6 +61,7 @@ export function Dashboard() {
     return <LoadingState label="Loading operations overview…" />
   }
 
+  const pipe = stats.pipeline || {}
   const isEmpty =
     stats.emails_total === 0 &&
     stats.approvals_pending === 0 &&
@@ -70,7 +75,7 @@ export function Dashboard() {
         title="Cyberfield Business Automation"
         description={
           <>
-            Quote-from-email automation with human approval · Engine{' '}
+            Multi-intent inbound ops with human approval · Engine{' '}
             <span className="font-medium text-cyan-300">{llmLabel(stats.llm_mode)}</span>
           </>
         }
@@ -79,49 +84,47 @@ export function Dashboard() {
             <Link to="/emails" className="btn-secondary">
               Open inbox
             </Link>
-            <Link to="/emails" className="btn-primary">
-              Run quote <ArrowRight className="h-3.5 w-3.5" />
+            <Link to="/approvals" className="btn-primary">
+              Review approvals <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard
-          label="Inbox"
-          value={stats.emails_total}
-          hint={`${stats.emails_unread} unread`}
-          icon={Inbox}
-          accent="cyan"
-        />
-        <StatCard
-          label="Approvals"
-          value={stats.approvals_pending}
-          hint="Awaiting review"
-          icon={ShieldCheck}
-          accent="amber"
-        />
-        <StatCard
-          label="Open deals"
-          value={stats.deals_open}
-          hint="CRM pipeline"
-          icon={Users}
-          accent="emerald"
-        />
-        <StatCard
-          label="Open tasks"
-          value={stats.tasks_open}
-          hint="Follow-ups"
-          icon={CheckSquare}
-          accent="violet"
-        />
-        <StatCard
-          label="Catalog"
-          value={stats.products}
-          hint="Priced SKUs"
-          icon={Package}
-          accent="cyan"
-        />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard label="Inbox" value={stats.emails_total} hint={`${stats.emails_unread} unread`} icon={Inbox} accent="cyan" />
+        <StatCard label="Approvals" value={stats.approvals_pending} hint="Awaiting review" icon={ShieldCheck} accent="amber" />
+        <StatCard label="Tickets" value={stats.tickets_open || 0} hint="Open / escalated" icon={Ticket} accent="violet" />
+        <StatCard label="Open deals" value={stats.deals_open} hint="CRM pipeline" icon={Users} accent="emerald" />
+        <StatCard label="Open tasks" value={stats.tasks_open} hint="Follow-ups" icon={CheckSquare} accent="violet" />
+        <StatCard label="Catalog" value={stats.products} hint="Priced SKUs" icon={Package} accent="cyan" />
+      </div>
+
+      <div className="ops-panel rounded-xl p-4">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          Multi-action pipeline
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {[
+            ['Unread', pipe.inbox_unread ?? stats.emails_unread],
+            ['Staged', pipe.action_staged ?? 0],
+            ['Pending approve', pipe.approvals_pending ?? stats.approvals_pending],
+            ['Approved', pipe.approvals_approved ?? 0],
+            ['Tickets', pipe.tickets_open ?? stats.tickets_open ?? 0],
+            ['Tasks', pipe.tasks_open ?? stats.tasks_open],
+            ['Deals', pipe.deals_open ?? stats.deals_open],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2.5 text-center"
+            >
+              <div className="text-lg font-semibold tabular-nums text-cyan-300">{value as number}</div>
+              <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                {label as string}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
@@ -135,7 +138,7 @@ export function Dashboard() {
           {stats.recent_activity.length === 0 ? (
             <EmptyState
               title="No activity yet"
-              description="Sync your inbox or run a quote workflow to see live operations here."
+              description="Sync your inbox to classify intents and stage action plans."
               icon={Bot}
               actions={
                 <Link to="/emails" className="btn-primary">
@@ -172,29 +175,47 @@ export function Dashboard() {
           )}
         </div>
 
-        <div className="ops-panel-glow space-y-4 rounded-xl p-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
-            <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
-              {isEmpty ? 'Get started' : 'Quick path'}
-            </h2>
+        <div className="space-y-3">
+          <div className="ops-panel-glow space-y-4 rounded-xl p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+              <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                {isEmpty ? 'Get started' : 'Quick path'}
+              </h2>
+            </div>
+            <ol className="list-decimal space-y-2.5 pl-4 text-sm leading-relaxed text-slate-400">
+              <li>
+                <span className="text-cyan-300">Sync inbox</span> — classify intents & stage plans
+              </li>
+              <li>
+                Review the unified <span className="text-cyan-300">Approvals</span> queue
+              </li>
+              <li>Selectively approve send / CRM / ticket / tasks</li>
+              <li>Track CRM, Tickets, and Tasks as the plan applies</li>
+            </ol>
+            <Link to="/emails" className="btn-primary w-full justify-center">
+              Start with Inbox <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
-          <ol className="list-decimal space-y-2.5 pl-4 text-sm leading-relaxed text-slate-400">
-            <li>
-              Open <span className="text-cyan-300">Inbox</span> → Sync Gmail or connect your mailbox
-            </li>
-            <li>
-              Select an RFQ and click <span className="text-cyan-300">Run quote</span>
-            </li>
-            <li>Review the draft in Approvals — edit quantities or the email</li>
-            <li>Approve to send, create a CRM deal, and assign a follow-up</li>
-          </ol>
-          <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 p-3 text-[11px] leading-relaxed text-slate-500">
-            Optional: connect n8n or another orchestrator via Workflows for inbound email automation.
-          </div>
-          <Link to="/emails" className="btn-primary w-full justify-center">
-            Start with Inbox <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+
+          {stats.by_intent && Object.keys(stats.by_intent).length > 0 ? (
+            <div className="ops-panel rounded-xl p-4">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Intent mix
+              </h2>
+              <ul className="space-y-1.5">
+                {Object.entries(stats.by_intent)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 8)
+                  .map(([intent, n]) => (
+                    <li key={intent} className="flex justify-between text-xs text-slate-300">
+                      <span className="capitalize">{intent.replaceAll('_', ' ')}</span>
+                      <span className="tabular-nums text-cyan-400">{n}</span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
