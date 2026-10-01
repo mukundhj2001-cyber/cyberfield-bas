@@ -22,8 +22,14 @@ def list_emails(
         default="attention",
         description="Sort: attention (default) | received | id",
     ),
+    include_non_business: bool = Query(
+        default=False,
+        description="When true, include messages marked non-business (default inbox hides them)",
+    ),
 ):
     q = db.query(Email)
+    if not include_non_business:
+        q = q.filter(Email.business_relevant.is_(True))
     if priority:
         q = q.filter(Email.attention_label.ilike(priority.strip()))
     if sort == "received":
@@ -31,7 +37,7 @@ def list_emails(
     elif sort == "id":
         q = q.order_by(Email.id.desc())
     else:
-        # Default: most attention first, then freshest
+        # Default: most attention first, then freshest (business mail only)
         q = q.order_by(Email.attention_score.desc(), Email.received_at.desc(), Email.id.desc())
     return q.all()
 
@@ -46,7 +52,7 @@ def get_email(email_id: int, db: Session = Depends(get_db)):
 
 @router.post("/recompute-attention")
 def recompute_attention(db: Session = Depends(get_db)):
-    """Force re-score of all inbox messages (demo / ops tool)."""
+    """Force re-score of all business inbox messages (demo / ops tool)."""
     count = recompute_all(db)
     return {"recomputed": count}
 

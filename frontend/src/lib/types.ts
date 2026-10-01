@@ -17,6 +17,13 @@ export type Email = {
     reasons?: string[]
     estimated_value?: number
   } | null
+  business_relevant?: boolean
+  business_meta?: {
+    is_business?: boolean
+    score?: number
+    reasons?: string[]
+    method?: string
+  } | null
 }
 
 export type LineItem = {
@@ -161,6 +168,8 @@ export type GmailSyncResponse = {
   mode: string
   imported: number
   skipped: number
+  filtered?: number
+  filtered_subjects?: string[]
   emails: Email[]
   status: GmailStatus
   warning?: string | null

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Contact, Deal, Email, Product, Task
 from app.services.attention import apply_attention, catalog_prices
+from app.services.business_relevance import classify_business_relevance
 
 
 PRODUCTS = [
@@ -119,6 +120,7 @@ EMAILS = [
         "status": "unread",
         "received_at": _NOW - timedelta(days=2),
     },
+    # Noise samples below are classified out at seed time (not persisted) to prove the filter.
     {
         "message_id": "msg-004-newsletter",
         "from_address": "digest@industry-weekly.example",
@@ -130,6 +132,15 @@ EMAILS = [
         ),
         "status": "unread",
         "received_at": _NOW - timedelta(days=1),
+    },
+    {
+        "message_id": "msg-005-reddit-noise",
+        "from_address": "noreply@redditmail.com",
+        "from_name": "Reddit",
+        "subject": "r/manufacturing — weekly roundup",
+        "body": "Top posts from Reddit. Unsubscribe · View in browser.",
+        "status": "unread",
+        "received_at": _NOW - timedelta(hours=6),
     },
 ]
 
@@ -143,7 +154,18 @@ def seed_if_empty(db: Session) -> None:
     if db.query(Email).count() == 0:
         catalog = catalog_prices(db)
         for row in EMAILS:
+            verdict = classify_business_relevance(
+                subject=row["subject"],
+                body=row["body"],
+                from_address=row["from_address"],
+                from_name=row.get("from_name") or "",
+            )
+            if not verdict.is_business:
+                # Prefer not importing noise into the inbox
+                continue
             email = Email(**row)
+            email.business_relevant = True
+            email.business_meta = verdict.as_meta()
             apply_attention(email, catalog=catalog)
             db.add(email)
 

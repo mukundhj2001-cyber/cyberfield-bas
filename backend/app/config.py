@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # n8n webhooks — when set, require X-Webhook-Secret header
     n8n_webhook_secret: str | None = None
 
+    # Business inbox filter — drop newsletters / social / marketing on ingest
+    business_filter_enabled: bool = True
+    # Comma-separated domains always treated as business (e.g. acme.com,vendor.example)
+    business_email_domains: str = ""
+    # Optional LLM refinement for borderline mail when a real provider is keyed
+    business_filter_use_llm: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

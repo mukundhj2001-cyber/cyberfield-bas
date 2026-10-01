@@ -16,6 +16,7 @@ export function Emails() {
   const [running, setRunning] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [filteredCount, setFilteredCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
 
@@ -57,9 +58,16 @@ export function Emails() {
       const warn = result.warning ? ` · ${result.warning}` : ''
       const scored =
         result.attention_rescored != null ? ` · rescored ${result.attention_rescored}` : ''
+      const filtered =
+        result.filtered && result.filtered > 0
+          ? ` · filtered ${result.filtered} non-business`
+          : ''
       setSyncMsg(
-        `Synced (${result.mode}): imported ${result.imported}, skipped ${result.skipped}${scored}${warn}`,
+        `Synced (${result.mode}): imported ${result.imported}, skipped ${result.skipped}${filtered}${scored}${warn}`,
       )
+      if (result.filtered && result.filtered > 0) {
+        setFilteredCount(result.filtered)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -100,7 +108,7 @@ export function Emails() {
           </div>
           <h1 className="mt-1 text-xl font-semibold text-white">Inbox</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Ranked by attention · critical / time-sensitive mail first
+            Business mail only · ranked by attention (critical first)
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -116,6 +124,14 @@ export function Emails() {
             >
               <Link2 className="h-3 w-3" />
               {gmail.connected ? 'Connected' : 'Mock'}
+            </span>
+          ) : null}
+          {filteredCount != null && filteredCount > 0 ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/80 px-2.5 py-1 text-[10px] font-medium text-slate-300"
+              title="Non-business mail (newsletters, social, marketing) was not imported"
+            >
+              filtered {filteredCount} non-business
             </span>
           ) : null}
           <button

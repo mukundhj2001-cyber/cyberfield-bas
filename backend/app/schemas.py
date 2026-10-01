@@ -23,6 +23,8 @@ class EmailOut(OrmModel):
     attention_score: float = 0.0
     attention_label: str = "Low"
     attention_meta: Optional[dict[str, Any]] = None
+    business_relevant: bool = True
+    business_meta: Optional[dict[str, Any]] = None
 
 
 class ProductOut(OrmModel):
@@ -144,6 +146,8 @@ class GmailSyncResponse(BaseModel):
     mode: str
     imported: int
     skipped: int
+    filtered: int = 0
+    filtered_subjects: list[str] = Field(default_factory=list)
     emails: list[EmailOut] = Field(default_factory=list)
     status: GmailStatusOut
     warning: Optional[str] = None
@@ -166,9 +170,11 @@ class N8nTriggerQuote(BaseModel):
 
 
 class N8nEmailWebhookResponse(BaseModel):
-    email_id: int
-    message_id: str
+    email_id: Optional[int] = None
+    message_id: Optional[str] = None
     status: str
+    filtered: bool = False
+    filter_reasons: list[str] = Field(default_factory=list)
     workflow: Optional[QuoteRunResponse] = None
 
 

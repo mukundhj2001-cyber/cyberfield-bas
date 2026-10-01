@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import ActivityLog, Email
 from app.services.attention import apply_attention, catalog_prices, recompute_all
+from app.services.business_relevance import should_import_message
 
 logger = logging.getLogger(__name__)
 
@@ -90,15 +91,44 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "received_at": _MOCK_NOW - timedelta(hours=4),
     },
     {
-        "message_id": "gmail-mock-008-low-noise",
-        "from_address": "noreply@parts-partner.example",
-        "from_name": "Parts Partner",
-        "subject": "Your monthly account statement is ready",
+        "message_id": "gmail-mock-008-po-confirm",
+        "from_address": "buyer@riverbend-plants.example",
+        "from_name": "Jordan Blake",
+        "subject": "PO-4412 released — please confirm shipment window",
         "body": (
-            "Hi,\n\nYour statement for last month is attached in the portal.\n"
-            "No reply needed.\n\n— Parts Partner Billing"
+            "Hello,\n\n"
+            "Purchase order PO-4412 is released for the pump package.\n"
+            "Please confirm shipment / delivery ETA to Cleveland OH.\n\n"
+            "Jordan Blake\nPurchasing"
         ),
-        "received_at": _MOCK_NOW - timedelta(days=3),
+        "received_at": _MOCK_NOW - timedelta(days=1),
+    },
+    # Noise samples — business filter drops these (never imported)
+    {
+        "message_id": "gmail-mock-noise-reddit",
+        "from_address": "noreply@redditmail.com",
+        "from_name": "Reddit",
+        "subject": "r/industrialengineering — top posts this week",
+        "body": (
+            "Your Reddit digest of popular posts.\n"
+            "Unsubscribe anytime. View in browser.\n"
+            "No action required."
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=3),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-linkedin",
+        "from_address": "messages-noreply@linkedin.com",
+        "from_name": "LinkedIn",
+        "subject": "You have 12 new notifications — weekly roundup",
+        "body": (
+            "See who viewed your profile and sponsored marketing tips.\n"
+            "Unsubscribe · Manage preferences\n"
+            "This is a promotional LinkedIn digest."
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=5),
+        "expect_filtered": True,
     },
 ]
 
@@ -170,49 +200,91 @@ async def sync_inbox(db: Session) -> dict[str, Any]:
     return result
 
 
-def _persist_new_email(db: Session, *, fields: dict[str, Any], catalog: dict[str, float]) -> Email:
+def _persist_new_email(
+    db: Session,
+    *,
+    fields: dict[str, Any],
+    catalog: dict[str, float],
+    business_meta: dict[str, Any] | None = None,
+) -> Email:
     email = Email(**fields)
+    email.business_relevant = True
+    email.business_meta = business_meta
     apply_attention(email, catalog=catalog)
     db.add(email)
     return email
 
 
+def _try_import_fields(
+    db: Session,
+    *,
+    fields: dict[str, Any],
+    catalog: dict[str, float],
+) -> tuple[Email | None, dict[str, Any] | None]:
+    """Classify then persist only business-relevant mail. Returns (email|None, filter_meta)."""
+    ok, classification = should_import_message(
+        subject=fields.get("subject") or "",
+        body=fields.get("body") or "",
+        from_address=fields.get("from_address") or "",
+        from_name=fields.get("from_name") or "",
+        db=db,
+    )
+    meta = classification.as_meta()
+    if not ok:
+        return None, meta
+    email = _persist_new_email(db, fields=fields, catalog=catalog, business_meta=meta)
+    return email, meta
+
+
 def _sync_mock(db: Session) -> dict[str, Any]:
     created: list[Email] = []
     skipped = 0
+    filtered = 0
+    filtered_subjects: list[str] = []
     catalog = catalog_prices(db)
     for row in MOCK_GMAIL_POOL:
         existing = db.query(Email).filter(Email.message_id == row["message_id"]).first()
         if existing:
             skipped += 1
             continue
-        email = _persist_new_email(
-            db,
-            fields={
-                "message_id": row["message_id"],
-                "from_address": row["from_address"],
-                "from_name": row["from_name"],
-                "to_address": "quotes@northwind-industrial.example",
-                "subject": row["subject"],
-                "body": row["body"],
-                "received_at": row.get("received_at") or datetime.now(timezone.utc),
-                "status": "unread",
-            },
-            catalog=catalog,
-        )
+        fields = {
+            "message_id": row["message_id"],
+            "from_address": row["from_address"],
+            "from_name": row["from_name"],
+            "to_address": "quotes@northwind-industrial.example",
+            "subject": row["subject"],
+            "body": row["body"],
+            "received_at": row.get("received_at") or datetime.now(timezone.utc),
+            "status": "unread",
+        }
+        email, meta = _try_import_fields(db, fields=fields, catalog=catalog)
+        if email is None:
+            filtered += 1
+            filtered_subjects.append(row["subject"][:80])
+            logger.info(
+                "Filtered non-business mock message %s (%s)",
+                row["message_id"],
+                (meta or {}).get("reasons"),
+            )
+            continue
         created.append(email)
 
-    if created:
+    meta_common = {
+        "mode": "mock",
+        "imported": len(created),
+        "skipped": skipped,
+        "filtered": filtered,
+        "filtered_subjects": filtered_subjects,
+    }
+    if created or filtered:
         db.add(
             ActivityLog(
                 kind="gmail_sync",
-                message=f"Mock Gmail sync imported {len(created)} message(s)",
-                meta={
-                    "mode": "mock",
-                    "imported": len(created),
-                    "skipped": skipped,
-                    "message_ids": [e.message_id for e in created],
-                },
+                message=(
+                    f"Mock Gmail sync imported {len(created)} business message(s)"
+                    + (f", filtered {filtered} non-business" if filtered else "")
+                ),
+                meta={**meta_common, "message_ids": [e.message_id for e in created]},
             )
         )
     else:
@@ -220,7 +292,7 @@ def _sync_mock(db: Session) -> dict[str, Any]:
             ActivityLog(
                 kind="gmail_sync",
                 message="Mock Gmail sync — inbox already up to date",
-                meta={"mode": "mock", "imported": 0, "skipped": skipped},
+                meta=meta_common,
             )
         )
     db.commit()
@@ -231,6 +303,8 @@ def _sync_mock(db: Session) -> dict[str, Any]:
         "mode": "mock",
         "imported": len(created),
         "skipped": skipped,
+        "filtered": filtered,
+        "filtered_subjects": filtered_subjects,
         "emails": created,
         "status": gmail_connection_status(),
     }
@@ -246,6 +320,8 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
     messages = await _list_gmail_messages(token, max_results=25)
     created: list[Email] = []
     skipped = 0
+    filtered = 0
+    filtered_subjects: list[str] = []
     catalog = catalog_prices(db)
     for msg in messages:
         mid = f"gmail-{msg['id']}"
@@ -254,27 +330,37 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
             skipped += 1
             continue
         parsed = _parse_gmail_message(msg)
-        email = _persist_new_email(
-            db,
-            fields={
-                "message_id": mid,
-                "from_address": parsed["from_address"],
-                "from_name": parsed["from_name"],
-                "to_address": parsed["to_address"],
-                "subject": parsed["subject"],
-                "body": parsed["body"],
-                "received_at": parsed["received_at"],
-                "status": "unread",
-            },
-            catalog=catalog,
-        )
+        fields = {
+            "message_id": mid,
+            "from_address": parsed["from_address"],
+            "from_name": parsed["from_name"],
+            "to_address": parsed["to_address"],
+            "subject": parsed["subject"],
+            "body": parsed["body"],
+            "received_at": parsed["received_at"],
+            "status": "unread",
+        }
+        email, meta = _try_import_fields(db, fields=fields, catalog=catalog)
+        if email is None:
+            filtered += 1
+            filtered_subjects.append((parsed["subject"] or "")[:80])
+            continue
         created.append(email)
 
     db.add(
         ActivityLog(
             kind="gmail_sync",
-            message=f"Gmail OAuth sync imported {len(created)} message(s)",
-            meta={"mode": "oauth", "imported": len(created), "skipped": skipped},
+            message=(
+                f"Gmail OAuth sync imported {len(created)} business message(s)"
+                + (f", filtered {filtered} non-business" if filtered else "")
+            ),
+            meta={
+                "mode": "oauth",
+                "imported": len(created),
+                "skipped": skipped,
+                "filtered": filtered,
+                "filtered_subjects": filtered_subjects,
+            },
         )
     )
     db.commit()
@@ -285,6 +371,8 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
         "mode": "oauth",
         "imported": len(created),
         "skipped": skipped,
+        "filtered": filtered,
+        "filtered_subjects": filtered_subjects,
         "emails": created,
         "status": gmail_connection_status(),
     }
@@ -402,8 +490,12 @@ def ingest_external_email(
     to_address: str = "quotes@northwind-industrial.example",
     message_id: str | None = None,
     source: str = "n8n",
-) -> Email:
-    """Create an inbox row from an external webhook (n8n, etc.)."""
+) -> Email | dict[str, Any]:
+    """Create an inbox row from an external webhook (n8n, etc.).
+
+    Returns Email on import, or a dict ``{"filtered": True, ...}`` when the
+    business-relevance classifier drops the message (noise is not persisted).
+    """
     mid = message_id or f"{source}-{uuid4().hex[:16]}"
     # Stable-ish dedupe if caller re-posts same content without id
     if not message_id:
@@ -418,18 +510,39 @@ def ingest_external_email(
         return existing
 
     catalog = catalog_prices(db)
-    email = Email(
-        message_id=mid,
-        from_address=from_address,
-        from_name=from_name or from_address.split("@")[0],
-        to_address=to_address,
-        subject=subject,
-        body=body,
-        received_at=datetime.now(timezone.utc),
-        status="unread",
-    )
-    apply_attention(email, catalog=catalog)
-    db.add(email)
+    fields = {
+        "message_id": mid,
+        "from_address": from_address,
+        "from_name": from_name or from_address.split("@")[0],
+        "to_address": to_address,
+        "subject": subject,
+        "body": body,
+        "received_at": datetime.now(timezone.utc),
+        "status": "unread",
+    }
+    email, meta = _try_import_fields(db, fields=fields, catalog=catalog)
+    if email is None:
+        db.add(
+            ActivityLog(
+                kind="webhook_filtered",
+                message=f"Filtered non-business ingest via {source}: {subject[:80]}",
+                meta={
+                    "source": source,
+                    "from": from_address,
+                    "message_id": mid,
+                    "business": meta,
+                },
+            )
+        )
+        db.commit()
+        return {
+            "filtered": True,
+            "message_id": mid,
+            "status": "filtered",
+            "filter_reasons": (meta or {}).get("reasons") or [],
+            "business_meta": meta,
+        }
+
     db.add(
         ActivityLog(
             kind="webhook_ingest",
@@ -440,6 +553,7 @@ def ingest_external_email(
                 "message_id": mid,
                 "attention_score": email.attention_score,
                 "attention_label": email.attention_label,
+                "business": meta,
             },
         )
     )

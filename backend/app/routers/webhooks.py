@@ -61,7 +61,7 @@ async def n8n_email(
     x_webhook_secret: Optional[str] = Header(default=None, alias="X-Webhook-Secret"),
 ):
     _check_secret(x_webhook_secret)
-    email = ingest_external_email(
+    result = ingest_external_email(
         db,
         from_address=payload.from_address,
         from_name=payload.from_name or "",
@@ -71,6 +71,17 @@ async def n8n_email(
         message_id=payload.message_id,
         source="n8n",
     )
+    if isinstance(result, dict) and result.get("filtered"):
+        return N8nEmailWebhookResponse(
+            email_id=None,
+            message_id=result.get("message_id"),
+            status="filtered",
+            filtered=True,
+            filter_reasons=list(result.get("filter_reasons") or []),
+            workflow=None,
+        )
+
+    email = result
     workflow_result = None
     if payload.run_quote_workflow:
         try:
@@ -82,6 +93,7 @@ async def n8n_email(
         email_id=email.id,
         message_id=email.message_id,
         status=email.status,
+        filtered=False,
         workflow=QuoteRunResponse(**workflow_result) if workflow_result else None,
     )
 

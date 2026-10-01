@@ -295,10 +295,10 @@ def apply_attention(
 
 
 def recompute_all(db: Session) -> int:
-    """Re-score every inbox message (e.g. after sync so age stays fresh)."""
+    """Re-score business inbox messages (e.g. after sync so age stays fresh)."""
     catalog = catalog_prices(db)
     now = datetime.now(timezone.utc)
-    rows = db.query(Email).all()
+    rows = db.query(Email).filter(Email.business_relevant.is_(True)).all()
     for email in rows:
         apply_attention(email, catalog=catalog, now=now)
     db.commit()

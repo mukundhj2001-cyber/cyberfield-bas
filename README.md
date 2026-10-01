@@ -17,7 +17,8 @@ Built as a portfolio slice for [Cyberfield](https://github.com/mukundhj2001-cybe
 | Workflow | `quote_from_email` state machine (LangGraph-shaped stages) |
 | LLM | OpenAI / Anthropic when keyed; otherwise **deterministic mock** |
 | Ingest | **Mock Gmail sync** (default) · optional Google OAuth · **n8n webhooks** |
-| Ranking | Attention score + Critical/High/Medium/Low labels on every inbox message |
+| Ranking | Attention score + Critical/High/Medium/Low on **business** mail |
+| Filter | Business-relevance heuristics (offline) · optional domain allowlist |
 
 Optional Postgres via `docker-compose.yml` (Docker not required for the local demo).
 
@@ -30,7 +31,7 @@ cyberfield-bas/
 │   │   ├── main.py
 │   │   ├── models.py / schemas.py / database.py / seed.py
 │   │   ├── agent/           # llm + quote_workflow
-│   │   ├── services/        # gmail.py + attention.py
+│   │   ├── services/        # gmail.py + attention.py + business_relevance.py
 │   │   └── routers/         # emails, inbox, workflows, approvals, crm, tasks, webhooks, dashboard
 │   └── requirements.txt
 ├── frontend/                # Dark ops UI (Cyberfield branding)
@@ -71,7 +72,7 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ### 3. Demo script (mock LLM + mock Gmail, offline)
 
-1. **Inbox** — messages are sorted by **attention** (Critical → Low). Click **Sync Gmail** to import more varied mock RFQs.
+1. **Inbox** — **business mail only**, sorted by **attention** (Critical → Low). Click **Sync Gmail** to import mock RFQs (noise digests are filtered).
 2. Use the **Priority** chips to filter Critical / High / Medium / Low.
 3. Select a high-attention RFQ → **Run quote workflow**.
 4. **Approvals** — review line items / edit qty or email body.
@@ -139,12 +140,36 @@ Every inbox message stores:
 
 Inbox UI defaults to attention-desc sort with rank chips and an optional priority filter. Mock/seeded mail is written with varied urgency so demos show a clear Critical → Low ordering.
 
+## Business relevance filter
+
+Inbox is **business-only**. On every ingest path (mock Gmail sync, OAuth sync, n8n webhook) a heuristic classifier decides whether a message is B2B ops mail worth attention. Noise is **not imported** (preferred) so Reddit digests, newsletters, LinkedIn/X promos, and similar clutter never land in the default list.
+
+| Signal type | Examples |
+|-------------|----------|
+| **Keep** | RFQ, quote, invoice, PO, procurement, supplier/vendor, order, shipment, SLA, contract, demo request, known CRM contacts, `BUSINESS_EMAIL_DOMAINS` allowlist |
+| **Drop** | Reddit, newsletter, unsubscribe, LinkedIn/Twitter/X marketing, promo, no-reply digests, weekly roundup / media digests |
+
+Attention ranking (Critical / High / ...) still runs **only on business mail** after import.
+
+**Knobs** (env / `backend/.env`):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `BUSINESS_FILTER_ENABLED` | `true` | Set `false` to import everything (debug) |
+| `BUSINESS_EMAIL_DOMAINS` | empty | Comma-separated domains always treated as business |
+| `BUSINESS_FILTER_USE_LLM` | `false` | Reserved for optional LLM refinement when a real provider is keyed |
+
+Sync response includes `filtered` + `filtered_subjects`; the Inbox UI shows a **filtered N non-business** chip after sync. Seeded mock pool includes 1-2 noise samples that are dropped on sync to prove the feature. Legacy rows already in SQLite are reclassified on API boot and hidden from the default inbox (`business_relevant=false`).
+
+Debug: `GET /emails?include_non_business=true` lists hidden rows if any were marked rather than dropped.
+
 ## Mock vs real matrix
 
 | Capability | Status |
 |------------|--------|
 | Inbox UI + quote workflow + approvals | **Real** (API + UI) |
-| Attention ranking | **Real** (heuristic scorer) |
+| Attention ranking | **Real** (heuristic scorer, business mail only) |
+| Business filter | **Real** (heuristics; noise not imported) |
 | Pricing catalog / CRM / tasks writes | **Real** (SQLite) |
 | LLM extraction | **Mock by default**; optional OpenAI/Anthropic |
 | Gmail sync | **Mock by default** (seeded pool); optional OAuth |
@@ -212,7 +237,7 @@ Import `examples/n8n/gmail-to-bas.json` into n8n (Gmail Trigger → HTTP Request
 
 - `GET /health`
 - `GET /dashboard/stats`
-- `GET /emails` (`?sort=attention|received|id`, `?priority=Critical|High|Medium|Low`)
+- `GET /emails` (`?sort=attention|received|id`, `?priority=Critical|High|Medium|Low`, `?include_non_business=true`)
 - `POST /emails/recompute-attention`
 - `GET /emails/{id}`, `POST /emails/{id}/recompute-attention`
 - `GET /inbox/gmail/status`, `POST /inbox/sync` (alias `POST /gmail/sync`)

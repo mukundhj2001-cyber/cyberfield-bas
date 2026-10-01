@@ -9,6 +9,7 @@ from app.database import Base, SessionLocal, engine, ensure_schema
 from app.routers import approvals, crm, dashboard, emails, inbox, tasks, webhooks, workflows
 from app.seed import seed_if_empty
 from app.services.attention import recompute_all
+from app.services.business_relevance import reclassify_existing_emails
 from app.services.gmail import gmail_connection_status
 
 
@@ -19,6 +20,8 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         seed_if_empty(db)
+        # Mark legacy noise (newsletters etc.) and drop from default inbox
+        reclassify_existing_emails(db)
         # Ensure existing DBs (pre-ranking) get scores on boot
         recompute_all(db)
     finally:
@@ -30,7 +33,7 @@ settings = get_settings()
 app = FastAPI(
     title="Cyberfield Business Automation System",
     description="Autonomous business operations agent — quote-from-email flagship workflow.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 

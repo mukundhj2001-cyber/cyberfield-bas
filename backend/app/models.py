@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,6 +25,9 @@ class Email(Base):
     attention_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     attention_label: Mapped[str] = mapped_column(String(32), default="Low", index=True)
     attention_meta: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # Business filter — default inbox only shows business_relevant=True
+    business_relevant: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    business_meta: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     approvals: Mapped[list["Approval"]] = relationship(back_populates="email")
 

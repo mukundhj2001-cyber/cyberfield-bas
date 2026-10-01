@@ -43,6 +43,8 @@ def ensure_schema() -> None:
             ("attention_score", "FLOAT DEFAULT 0.0"),
             ("attention_label", "VARCHAR(32) DEFAULT 'Low'"),
             ("attention_meta", "JSON"),
+            ("business_relevant", "BOOLEAN DEFAULT 1"),
+            ("business_meta", "JSON"),
         ],
     }
     with engine.begin() as conn:
