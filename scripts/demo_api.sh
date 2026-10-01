@@ -11,7 +11,7 @@ python3 -m json.tool < /tmp/bas_sync.json
 python3 - <<'PY'
 import json
 sync = json.load(open("/tmp/bas_sync.json"))
-filtered = int(sync.get("filtered") or 0)
+filtered = int(sync.get("filtered_count") if sync.get("filtered_count") is not None else sync.get("filtered") or 0)
 classified = int(sync.get("classified") or 0)
 staged = int(sync.get("plans_staged") or 0)
 print(f"filtered non-business: {filtered}")
@@ -129,16 +129,36 @@ print("intent_matrix rows:", len(s.get("intent_matrix") or []))
 assert len(s.get("intent_matrix") or []) >= 10, "intent matrix too thin"
 print("OK: multi-action dashboard + intent matrix")
 PY
-echo "== n8n noise ingest should filter =="
-curl -s -X POST "$API/webhooks/n8n/email" \
-  -H 'Content-Type: application/json' \
-  -d '{"from_address":"noreply@redditmail.com","from_name":"Reddit","subject":"Reddit weekly digest","body":"Unsubscribe from this newsletter roundup.","run_ops_workflow":false}' \
-  | tee /tmp/bas_noise.json | python3 -m json.tool
+echo "== n8n noise ingest should filter (reddit/medium/substack/github/newsletter) =="
+python3 - <<'PY'
+import json, os, urllib.request
+API = os.environ.get("API", "http://localhost:8000")
+samples = [
+  {"from_address":"noreply@redditmail.com","from_name":"Reddit","subject":"Reddit weekly digest","body":"Unsubscribe from this newsletter roundup.","run_ops_workflow":False,"message_id":"demo-noise-reddit"},
+  {"from_address":"noreply@medium.com","from_name":"Medium","subject":"Stories for you from Medium","body":"Read this article. Top stories. Unsubscribe.","run_ops_workflow":False,"message_id":"demo-noise-medium"},
+  {"from_address":"noreply@substack.com","from_name":"Substack","subject":"Your Substack digest","body":"Weekly newsletter digest. Manage preferences.","run_ops_workflow":False,"message_id":"demo-noise-substack"},
+  {"from_address":"notifications@github.com","from_name":"GitHub","subject":"[GitHub] You have new notifications","body":"github notifications. Pushed to main.","run_ops_workflow":False,"message_id":"demo-noise-github"},
+  {"from_address":"digest@industry-weekly.example","from_name":"Industry Weekly","subject":"This week in industrial supply — newsletter","body":"Daily digest morning brief. Unsubscribe.","run_ops_workflow":False,"message_id":"demo-noise-newsletter"},
+]
+for s in samples:
+    req = urllib.request.Request(
+        API + "/webhooks/n8n/email",
+        data=json.dumps(s).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    r = json.load(urllib.request.urlopen(req))
+    assert r.get("filtered") is True, (s["subject"], r)
+    print("OK filtered:", s["subject"][:48], r.get("filter_reasons"))
+print("OK: all noisy n8n samples filtered")
+PY
+echo "== sync response reports filtered_count =="
 python3 - <<'PY'
 import json
-r = json.load(open("/tmp/bas_noise.json"))
-assert r.get("filtered") is True, r
-print("OK: n8n noise filtered", r.get("filter_reasons"))
+sync = json.load(open("/tmp/bas_sync.json"))
+fc = sync.get("filtered_count", sync.get("filtered"))
+assert fc is not None, sync
+print(f"OK: sync filtered_count={fc} filtered={sync.get('filtered')} subjects={sync.get('filtered_subjects')}")
 PY
 echo "== n8n support complaint + ops workflow =="
 WH=$(curl -s -X POST "$API/webhooks/n8n/email" \

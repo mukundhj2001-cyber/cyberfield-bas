@@ -241,6 +241,7 @@ export type GmailSyncResponse = {
   imported: number
   skipped: number
   filtered?: number
+  filtered_count?: number
   filtered_subjects?: string[]
   classified?: number
   plans_staged?: number
@@ -248,6 +249,7 @@ export type GmailSyncResponse = {
   status: GmailStatus
   warning?: string | null
   attention_rescored?: number
+  list_query?: string | null
 }
 
 export type WebhookInfo = {

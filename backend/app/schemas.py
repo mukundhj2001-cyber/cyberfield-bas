@@ -195,6 +195,7 @@ class GmailSyncResponse(BaseModel):
     imported: int
     skipped: int
     filtered: int = 0
+    filtered_count: int = 0  # alias of filtered — always present for UI/status
     filtered_subjects: list[str] = Field(default_factory=list)
     classified: int = 0
     plans_staged: int = 0
@@ -202,6 +203,7 @@ class GmailSyncResponse(BaseModel):
     status: GmailStatusOut
     warning: Optional[str] = None
     attention_rescored: int = 0
+    list_query: Optional[str] = None  # Gmail API q when OAuth
 
 
 class N8nEmailWebhook(BaseModel):

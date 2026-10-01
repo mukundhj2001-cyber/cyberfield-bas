@@ -19,11 +19,13 @@ def gmail_status():
 async def sync_gmail_inbox(db: Session = Depends(get_db)):
     """Sync Gmail into inbox. Classifies intents and stages action plans for approval."""
     result = await sync_inbox(db)
+    filtered_n = int(result.get("filtered") or result.get("filtered_count") or 0)
     return GmailSyncResponse(
         mode=result["mode"],
         imported=result["imported"],
         skipped=result["skipped"],
-        filtered=int(result.get("filtered") or 0),
+        filtered=filtered_n,
+        filtered_count=filtered_n,
         filtered_subjects=list(result.get("filtered_subjects") or []),
         classified=int(result.get("classified") or 0),
         plans_staged=int(result.get("plans_staged") or 0),
@@ -31,6 +33,7 @@ async def sync_gmail_inbox(db: Session = Depends(get_db)):
         status=GmailStatusOut.model_validate(result["status"]),
         warning=result.get("warning"),
         attention_rescored=int(result.get("attention_rescored") or 0),
+        list_query=result.get("list_query"),
     )
 
 

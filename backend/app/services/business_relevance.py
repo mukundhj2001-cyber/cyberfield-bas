@@ -3,6 +3,9 @@
 Heuristics work offline (mock LLM / no keys). Optional LLM refinement is used
 only when a real provider is already configured and BUSINESS_FILTER_USE_LLM=1
 — borderline messages only; never required for demos.
+
+Prefer *not* importing noise: require clear B2B/ops signals, and veto social /
+newsletter / digest / marketing chrome aggressively.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ POSITIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
     (re.compile(r"\bRFI\b"), 12, "RFI"),
     (re.compile(r"\bquot(e|ation|ing)\b", re.I), 22, "quote"),
     (re.compile(r"\binvoice\b", re.I), 18, "invoice"),
-    (re.compile(r"\b(P\.?O\.?|purchase\s+order)\b", re.I), 24, "purchase order"),
+    (re.compile(r"\b(P\.?O\.?\s*[-:#]?\s*\d+|purchase\s+order)\b", re.I), 24, "purchase order"),
     (re.compile(r"\bprocurement\b", re.I), 18, "procurement"),
     (re.compile(r"\b(suppliers?|vendors?)\b", re.I), 12, "supplier/vendor"),
     (re.compile(r"\bcustomers?\b", re.I), 8, "customer"),
@@ -35,7 +38,7 @@ POSITIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
     (re.compile(r"\bplease\s+quote\b|\brequest(ing)?\s+(a\s+)?(quot|pricing|price)\b", re.I), 24, "pricing request"),
     (re.compile(r"\b(line\s+items?|bill\s+of\s+materials|BOM)\b", re.I), 10, "line items/BOM"),
     (re.compile(r"\b(ops|operations|purchasing|sourcing)\b", re.I), 8, "ops/purchasing"),
-    (re.compile(r"\b(meeting|schedule|calendly|discovery\s+call|book\s+a\s+(call|demo|time)|zoom)\b", re.I), 14, "meeting/demo"),
+    (re.compile(r"\b(meeting|schedule|calendly|discovery\s+call|book\s+a\s+(call|demo|time)|zoom)\b", re.I), 18, "meeting/demo"),
     (re.compile(r"\b(NDA|non[- ]disclosure|master\s+(service|supply)\s+agreement|\bMSA\b|partnership)\b", re.I), 16, "NDA/MSA/partnership"),
     (re.compile(r"\b(RMA|return\s+authorization|quality\s+(issue|complaint)|defective|warranty)\b", re.I), 16, "RMA/quality"),
     (re.compile(r"\b(tracking|ETA|in\s+transit|lead\s+time)\b", re.I), 12, "tracking/ETA"),
@@ -47,28 +50,89 @@ POSITIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
 
 # --- Negative: social / marketing / digests / personal clutter ---
 NEGATIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
-    (re.compile(r"\breddit\b", re.I), 30, "reddit"),
-    (re.compile(r"\bnewsletter\b", re.I), 28, "newsletter"),
-    (re.compile(r"\bunsubscribe\b", re.I), 22, "unsubscribe"),
-    (re.compile(r"\b(linkedin|twitter|x\.com|facebook|instagram|tiktok)\b", re.I), 24, "social network"),
-    (re.compile(r"\b(promo(tion)?|promotional|sale\s+ends|%?\s*off\b|flash\s+sale)\b", re.I), 20, "promo"),
-    (re.compile(r"\b(weekly\s+roundup|daily\s+digest|weekly\s+digest|this\s+week\s+in)\b", re.I), 26, "media digest"),
-    (re.compile(r"\b(no[- ]?reply|noreply|donotreply|do[- ]?not[- ]?reply)\b", re.I), 12, "no-reply"),
-    (re.compile(r"\b(marketing|advertisement|sponsored)\b", re.I), 18, "marketing"),
-    (re.compile(r"\b(you\s+have\s+\d+\s+new\s+(notifications?|likes?|followers?))\b", re.I), 28, "social notification"),
-    (re.compile(r"\b(password\s+reset|verify\s+your\s+email|security\s+alert)\b", re.I), 16, "account noise"),
-    (re.compile(r"\b(view\s+in\s+browser|manage\s+preferences)\b", re.I), 14, "bulk mail chrome"),
-    (re.compile(r"@redditmail\.com\b|@linkedin\.com\b|@facebookmail\.com\b|@x\.com\b", re.I), 30, "social sender"),
-    (re.compile(r"\b(industry[- ]?weekly|media\s+digest|news\s+roundup)\b", re.I), 24, "news roundup"),
+    (re.compile(r"\breddit\b", re.I), 34, "reddit"),
+    (re.compile(r"\bnewsletter\b", re.I), 30, "newsletter"),
+    (re.compile(r"\bunsubscribe\b", re.I), 24, "unsubscribe"),
+    (re.compile(r"\b(linkedin|twitter|x\.com|facebook|instagram|tiktok|pinterest|snapchat)\b", re.I), 28, "social network"),
+    (re.compile(r"\b(promo(tion)?|promotional|sale\s+ends|%?\s*off\b|flash\s+sale|limited[- ]time\s+offer)\b", re.I), 22, "promo"),
+    (re.compile(r"\b(weekly\s+roundup|daily\s+digest|weekly\s+digest|this\s+week\s+in|morning\s+brief|evening\s+brief)\b", re.I), 28, "media digest"),
+    (re.compile(r"\b(digest|roundup|round[- ]up)\b", re.I), 16, "digest/roundup"),
+    (re.compile(r"\b(no[- ]?reply|noreply|donotreply|do[- ]?not[- ]?reply)\b", re.I), 14, "no-reply"),
+    (re.compile(r"\b(marketing|advertisement|sponsored|ad\s+campaign)\b", re.I), 20, "marketing"),
+    (re.compile(r"\b(you\s+have\s+\d+\s+new\s+(notifications?|likes?|followers?|comments?))\b", re.I), 30, "social notification"),
+    (re.compile(r"\b(password\s+reset|verify\s+your\s+email|security\s+alert|sign[- ]?in\s+code)\b", re.I), 18, "account noise"),
+    (re.compile(r"\b(view\s+in\s+browser|manage\s+preferences|update\s+your\s+preferences|email\s+preferences)\b", re.I), 16, "bulk mail chrome"),
+    (re.compile(
+        r"@redditmail\.com\b|@linkedin\.com\b|@facebookmail\.com\b|@x\.com\b|"
+        r"@substack\.com\b|@medium\.com\b|@mail\.medium\.com\b|"
+        r"@github\.com\b|@notifications\.github\.com\b|"
+        r"@email\.beehiiv\.com\b|@convertkit\.com\b|@mailchimp\.com\b",
+        re.I,
+    ), 34, "social/bulk sender"),
+    (re.compile(r"\b(industry[- ]?weekly|media\s+digest|news\s+roundup|top\s+stories|trending\s+(now|posts?))\b", re.I), 26, "news roundup"),
+    (re.compile(r"\b(substack|beehiiv|ghost\.io|buttondown)\b", re.I), 28, "newsletter platform"),
+    (re.compile(r"\bmedium\.com\b|\bfrom\s+medium\b|\bstories?\s+for\s+you\b", re.I), 28, "medium/articles"),
+    (re.compile(r"(github\s+notifications?|\[GitHub\]|new\s+pull\s+request|pushed\s+to\s+main)", re.I), 26, "github notification"),
+    (re.compile(r"\b(your\s+(daily|weekly|monthly)\s+(newsletter|digest|update|briefing))\b", re.I), 28, "periodic newsletter"),
+    (re.compile(r"\b(read\s+(this\s+)?(article|post|story)|new\s+post\s+from|just\s+published)\b", re.I), 18, "article/post"),
+    (re.compile(r"\b(list[- ]?unsubscribe|bulk\s+mail|mass\s+email)\b", re.I), 20, "bulk list"),
+    (re.compile(r"\b(coupon|deal\s+of\s+the\s+day|shop\s+now|free\s+shipping\s+on\s+orders)\b", re.I), 22, "retail promo"),
+    (re.compile(r"\b(r/[a-z0-9_]+)\b", re.I), 30, "subreddit"),
 ]
 
 NOISE_SENDER_RE = re.compile(
-    r"^(noreply|no-reply|donotreply|do-not-reply|newsletter|digest|news|marketing|promo|notifications?)@",
+    r"^(noreply|no-reply|donotreply|do-not-reply|newsletter|digest|news|marketing|promo|"
+    r"notifications?|hello|hi|team|updates?|mailer|campaign|info)@",
     re.I,
 )
 
-BUSINESS_THRESHOLD = 12
-NOISE_OVERRIDE = 18  # negative score that can veto weak positives unless RFQ-strong
+# Domains that are almost never B2B ops unless RFQ/PO/invoice strong hits
+HARD_NOISE_DOMAINS: set[str] = {
+    "redditmail.com",
+    "reddit.com",
+    "linkedin.com",
+    "facebookmail.com",
+    "facebook.com",
+    "x.com",
+    "twitter.com",
+    "instagram.com",
+    "substack.com",
+    "medium.com",
+    "mail.medium.com",
+    "github.com",
+    "notifications.github.com",
+    "email.beehiiv.com",
+    "beehiiv.com",
+    "convertkit.com",
+    "mailchimp.com",
+    "sendgrid.net",
+    "amazonses.com",
+    "pinterest.com",
+    "tiktok.com",
+}
+
+# Require clearer B2B signal than before (was 12 / soft pos>0 path)
+BUSINESS_THRESHOLD = 16
+NOISE_OVERRIDE = 14  # negative score that vetoes weak positives unless RFQ-strong
+MIN_NET_SCORE = 12
+
+STRONG_LABELS = {
+    "RFQ",
+    "RFP",
+    "purchase order",
+    "pricing request",
+    "invoice",
+    "procurement",
+    "demo request",
+    "meeting/demo",
+    "RMA/quality",
+    "NDA/MSA/partnership",
+    "change order",
+    "vendor compliance",
+    "payment/remittance",
+    "datasheet/COA",
+    "tracking/ETA",
+}
 
 
 @dataclass
@@ -100,6 +164,14 @@ def _domain_of(address: str) -> str:
     if "@" not in addr:
         return ""
     return addr.rsplit("@", 1)[-1].strip()
+
+
+def _is_hard_noise_domain(domain: str) -> bool:
+    if not domain:
+        return False
+    if domain in HARD_NOISE_DOMAINS:
+        return True
+    return any(domain.endswith("." + d) for d in HARD_NOISE_DOMAINS)
 
 
 def parse_allowlist_domains(raw: Optional[str] = None) -> set[str]:
@@ -136,12 +208,17 @@ def classify_business_relevance(
     addr = (from_address or "").strip().lower()
     if NOISE_SENDER_RE.search(addr):
         # Soft penalty — can still be overridden by strong RFQ from noreply billing
-        neg += 10
+        neg += 12
         reasons.append("-noreply-style sender")
+
+    dom = _domain_of(addr)
+    hard_noise = _is_hard_noise_domain(dom)
+    if hard_noise:
+        neg += 20
+        reasons.append("-hard-noise domain")
 
     allowlisted = False
     domains = allowlist_domains if allowlist_domains is not None else parse_allowlist_domains()
-    dom = _domain_of(addr)
     if dom and domains and (dom in domains or any(dom.endswith("." + d) for d in domains)):
         allowlisted = True
         pos += 30
@@ -153,33 +230,38 @@ def classify_business_relevance(
         pos += 25
         reasons.append("+known CRM contact")
 
-    # Strong B2B intent labels (not weak hits like bare "quote" in marketing)
-    strong_labels = {"RFQ", "RFP", "purchase order", "pricing request", "invoice", "procurement", "demo request"}
-    strong_hits = [r[1:] for r in reasons if r.startswith("+") and r[1:] in strong_labels]
+    strong_hits = [r[1:] for r in reasons if r.startswith("+") and r[1:] in STRONG_LABELS]
     # "quote" alone is weaker — only counts as strong with another commercial signal
     has_quote = any(r == "+quote" for r in reasons)
-    strong_business = bool(strong_hits) or (has_quote and pos >= 30 and neg < 10)
+    strong_business = bool(strong_hits) or (has_quote and pos >= 34 and neg < 10)
 
     score = float(pos - neg)
     if allowlisted or crm_known:
         is_business = True
+    elif hard_noise and not strong_hits:
+        # Reddit / Medium / Substack / GitHub / LinkedIn etc. — drop unless RFQ/PO/invoice
+        is_business = False
     elif neg >= NOISE_OVERRIDE and not strong_hits:
         # Heavy social/marketing chrome without RFQ/PO/invoice → drop
         is_business = False
-    elif strong_hits and score >= 8:
-        # Real RFQ/PO can survive light unsubscribe footer chrome
+    elif strong_hits and (score >= 6 or pos >= BUSINESS_THRESHOLD):
+        # Real RFQ/PO/complaint can survive unsubscribe footers or hard-noise domains
         is_business = True
-    elif strong_business and score > 0:
+    elif strong_business and score >= MIN_NET_SCORE:
         is_business = True
-    elif pos >= BUSINESS_THRESHOLD and pos > neg and score >= 8:
+    elif pos >= BUSINESS_THRESHOLD and neg == 0 and score >= BUSINESS_THRESHOLD:
+        # Clean B2B language, no noise chrome
         is_business = True
-    elif pos > 0 and neg == 0:
+    elif pos >= BUSINESS_THRESHOLD and pos >= neg * 2 and score >= MIN_NET_SCORE:
+        # Positives clearly dominate residual noise
         is_business = True
     else:
-        # Neutral / personal clutter → drop from business inbox
+        # Neutral / personal / weak positives → drop from business inbox
         is_business = False
         if not reasons:
             reasons.append("-no business signals")
+        elif not any(r.startswith("-") for r in reasons):
+            reasons.append("-weak business signal")
 
     return BusinessRelevanceResult(
         is_business=is_business,

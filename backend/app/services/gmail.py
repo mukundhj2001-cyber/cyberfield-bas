@@ -26,6 +26,14 @@ from app.services.business_relevance import should_import_message
 logger = logging.getLogger(__name__)
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+
+# Prefer Primary/ops-ish mail at the API layer; post-filter still applies.
+# Excludes Promotions + Social categories (Updates kept — shipping/PO alerts often land there).
+GMAIL_LIST_QUERY = (
+    "in:inbox -category:promotions -category:social "
+    "-from:redditmail.com -from:linkedin.com -from:substack.com "
+    "-from:medium.com -from:mail.medium.com -from:notifications.github.com"
+)
 _MOCK_NOW = datetime.now(timezone.utc)
 
 # Varied B2B intents for agency-grade demo coverage
@@ -179,7 +187,7 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         ),
         "received_at": _MOCK_NOW - timedelta(hours=18),
     },
-    # Noise — filtered
+    # Noise — must be filtered by business_relevance
     {
         "message_id": "gmail-mock-noise-reddit",
         "from_address": "noreply@redditmail.com",
@@ -196,6 +204,42 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "subject": "You have 12 new notifications — weekly roundup",
         "body": "Sponsored marketing tips. Unsubscribe · Manage preferences.",
         "received_at": _MOCK_NOW - timedelta(hours=5),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-medium",
+        "from_address": "noreply@medium.com",
+        "from_name": "Medium",
+        "subject": "Stories for you from Medium",
+        "body": "Read this article. Top stories trending now. View in browser. Unsubscribe.",
+        "received_at": _MOCK_NOW - timedelta(hours=2),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-substack",
+        "from_address": "noreply@substack.com",
+        "from_name": "Substack",
+        "subject": "Your Substack digest: 5 new posts",
+        "body": "Weekly newsletter digest from writers you follow. Manage preferences.",
+        "received_at": _MOCK_NOW - timedelta(hours=4),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-github",
+        "from_address": "notifications@github.com",
+        "from_name": "GitHub",
+        "subject": "[GitHub] You have new notifications",
+        "body": "github notifications for your repositories. Pushed to main. Nothing commercial.",
+        "received_at": _MOCK_NOW - timedelta(hours=1),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-newsletter",
+        "from_address": "digest@industry-weekly.example",
+        "from_name": "Industry Weekly",
+        "subject": "This week in industrial supply — newsletter",
+        "body": "Your daily digest / morning brief. Unsubscribe anytime.",
+        "received_at": _MOCK_NOW - timedelta(hours=9),
         "expect_filtered": True,
     },
 ]
@@ -370,16 +414,18 @@ async def _sync_mock(db: Session) -> dict[str, Any]:
         "imported": len(created),
         "skipped": skipped,
         "filtered": filtered,
+        "filtered_count": filtered,
         "filtered_subjects": filtered_subjects,
         "classified": classified,
         "plans_staged": plans_staged,
+        "list_query": None,
     }
     db.add(
         ActivityLog(
             kind="gmail_sync",
             message=(
-                f"Mock Gmail sync imported {len(created)} business message(s)"
-                + (f", filtered {filtered} non-business" if filtered else "")
+                f"Mock Gmail sync imported {len(created)} business message(s), "
+                f"filtered {filtered} non-business"
                 + (f", staged {plans_staged} action plan(s)" if plans_staged else "")
             ),
             meta={**meta_common, "message_ids": [e.message_id for e in created]},
@@ -394,11 +440,13 @@ async def _sync_mock(db: Session) -> dict[str, Any]:
         "imported": len(created),
         "skipped": skipped,
         "filtered": filtered,
+        "filtered_count": filtered,
         "filtered_subjects": filtered_subjects,
         "classified": classified,
         "plans_staged": plans_staged,
         "emails": created,
         "status": gmail_connection_status(),
+        "list_query": None,
     }
 
 
@@ -456,8 +504,8 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
         ActivityLog(
             kind="gmail_sync",
             message=(
-                f"Gmail OAuth sync imported {len(created)} business message(s)"
-                + (f", filtered {filtered} non-business" if filtered else "")
+                f"Gmail OAuth sync imported {len(created)} business message(s), "
+                f"filtered {filtered} non-business"
                 + (f", staged {plans_staged} action plan(s)" if plans_staged else "")
             ),
             meta={
@@ -465,8 +513,11 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
                 "imported": len(created),
                 "skipped": skipped,
                 "filtered": filtered,
+                "filtered_count": filtered,
+                "filtered_subjects": filtered_subjects,
                 "classified": classified,
                 "plans_staged": plans_staged,
+                "list_query": GMAIL_LIST_QUERY,
             },
         )
     )
@@ -479,11 +530,13 @@ async def _sync_oauth(db: Session) -> dict[str, Any]:
         "imported": len(created),
         "skipped": skipped,
         "filtered": filtered,
+        "filtered_count": filtered,
         "filtered_subjects": filtered_subjects,
         "classified": classified,
         "plans_staged": plans_staged,
         "emails": created,
         "status": gmail_connection_status(),
+        "list_query": GMAIL_LIST_QUERY,
     }
 
 
@@ -508,7 +561,7 @@ async def _list_gmail_messages(access_token: str, max_results: int = 25) -> list
         listing = await client.get(
             "https://gmail.googleapis.com/gmail/v1/users/me/messages",
             headers=headers,
-            params={"maxResults": max_results, "q": "in:inbox"},
+            params={"maxResults": max_results, "q": GMAIL_LIST_QUERY},
         )
         listing.raise_for_status()
         ids = [m["id"] for m in (listing.json().get("messages") or [])]

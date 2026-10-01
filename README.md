@@ -157,7 +157,9 @@ Attention ranking (Critical / High / ...) still runs **only on business mail** a
 | `BUSINESS_EMAIL_DOMAINS` | empty | Comma-separated domains always treated as business |
 | `BUSINESS_FILTER_USE_LLM` | `false` | Reserved for optional LLM refinement when a real provider is keyed |
 
-Sync response includes `filtered` + `filtered_subjects`; the Inbox UI shows a **filtered N non-business** chip after sync. Seeded mock pool includes 1-2 noise samples that are dropped on sync to prove the feature. Legacy rows already in SQLite are reclassified on API boot and hidden from the default inbox (`business_relevant=false`).
+Sync response includes `filtered` / `filtered_count` + `filtered_subjects`; the Inbox UI always shows a **Filtered N non-business** chip after sync. Heuristics veto Reddit, LinkedIn, Medium, Substack, GitHub notifications (unless PO/invoice), digests, and marketing; OAuth list query also excludes Gmail Promotions/Social (+ known noise senders) before post-filter. Mock pool includes several noise samples that must drop on sync. Legacy rows are reclassified on API boot (`business_relevant=false`).
+
+Unit smoke: `cd backend && python -m unittest tests.test_business_relevance -v`.
 
 Debug: `GET /emails?include_non_business=true` lists hidden rows if any were marked rather than dropped.
 

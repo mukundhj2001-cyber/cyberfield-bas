@@ -61,15 +61,16 @@ export function Emails() {
     try {
       const result = await api.syncInbox()
       await load()
+      const filteredN = result.filtered_count ?? result.filtered ?? 0
       const parts = [
         `Imported ${result.imported}`,
         result.classified ? `classified ${result.classified}` : null,
         result.plans_staged ? `staged ${result.plans_staged} plans` : null,
         result.skipped ? `skipped ${result.skipped}` : null,
-        result.filtered && result.filtered > 0 ? `filtered ${result.filtered} non-business` : null,
+        `filtered ${filteredN} non-business`,
       ].filter(Boolean)
       toast.success(`Inbox synced · ${parts.join(' · ')}`)
-      if (result.filtered && result.filtered > 0) setFilteredCount(result.filtered)
+      setFilteredCount(filteredN)
       if (result.plans_staged && result.plans_staged > 0) {
         toast.info(`${result.plans_staged} action plan(s) awaiting approval`)
       }
@@ -137,8 +138,16 @@ export function Emails() {
                 {gmailChipLabel}
               </span>
             ) : null}
-            {filteredCount != null && filteredCount > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/80 px-2.5 py-1 text-[10px] font-medium text-slate-300">
+            {filteredCount != null ? (
+              <span
+                className={[
+                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium',
+                  filteredCount > 0
+                    ? 'border-violet-500/40 bg-violet-500/10 text-violet-200'
+                    : 'border-slate-600/60 bg-slate-800/80 text-slate-400',
+                ].join(' ')}
+                title="Non-business messages dropped on last sync"
+              >
                 Filtered {filteredCount} non-business
               </span>
             ) : null}
