@@ -38,10 +38,18 @@ export const api = {
       version?: string
     }>('/health'),
   stats: () => request<DashboardStats>('/dashboard/stats'),
-  emails: (opts?: { priority?: string; sort?: string }) => {
+  emails: (opts?: {
+    priority?: string
+    sort?: string
+    /** Debug only — default Inbox never sets this */
+    include_ignored?: boolean
+    include_non_business?: boolean
+  }) => {
     const params = new URLSearchParams()
     if (opts?.priority) params.set('priority', opts.priority)
     if (opts?.sort) params.set('sort', opts.sort)
+    if (opts?.include_ignored) params.set('include_ignored', 'true')
+    if (opts?.include_non_business) params.set('include_non_business', 'true')
     const q = params.toString()
     return request<Email[]>(`/emails${q ? `?${q}` : ''}`)
   },

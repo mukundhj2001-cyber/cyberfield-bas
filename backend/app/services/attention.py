@@ -298,7 +298,16 @@ def recompute_all(db: Session) -> int:
     """Re-score business inbox messages (e.g. after sync so age stays fresh)."""
     catalog = catalog_prices(db)
     now = datetime.now(timezone.utc)
-    rows = db.query(Email).filter(Email.business_relevant.is_(True)).all()
+    from sqlalchemy import or_
+
+    rows = (
+        db.query(Email)
+        .filter(
+            Email.business_relevant.is_(True),
+            or_(Email.status.is_(None), Email.status != "ignored"),
+        )
+        .all()
+    )
     for email in rows:
         apply_attention(email, catalog=catalog, now=now)
     db.commit()

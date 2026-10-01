@@ -95,6 +95,24 @@ NOISE: list[dict[str, str]] = [
         "from_address": "friend@gmail.com",
         "from_name": "Sam",
     },
+    {
+        "subject": "BSE ALERTS: Corporate Action — Scrip Code 500325",
+        "body": "BSE India market alert. Sensex update and equity corporate action notice.",
+        "from_address": "alerts@bseindia.com",
+        "from_name": "BSE ALERTS",
+    },
+    {
+        "subject": "Team Unstop — new hackathon & internship opportunities for you",
+        "body": "Apply now for this internship on Unstop. Career digest with job alerts. Promo.",
+        "from_address": "team@unstop.com",
+        "from_name": "Team Unstop",
+    },
+    {
+        "subject": "Naukri job alert — 12 new matching roles",
+        "body": "Your Naukri career opportunity digest. Apply now. Unsubscribe.",
+        "from_address": "alerts@naukri.com",
+        "from_name": "Naukri",
+    },
 ]
 
 
@@ -166,6 +184,9 @@ class BusinessRelevanceTests(unittest.TestCase):
         self.assertIn("-from:redditmail.com", q)
         self.assertIn("-from:substack.com", q)
         self.assertIn("-from:notifications.github.com", q)
+        self.assertIn("-from:bseindia.com", q)
+        self.assertIn("-from:unstop.com", q)
+        self.assertIn("-from:naukri.com", q)
 
 
 if __name__ == "__main__":

@@ -33,9 +33,11 @@ export function Emails() {
       }),
       api.gmailStatus(),
     ])
-    setEmails(rows)
+    // Default Inbox: API already excludes ignored/non-business; belt-and-suspenders here
+    const visible = rows.filter((e) => e.status !== 'ignored' && e.business_relevant !== false)
+    setEmails(visible)
     setGmail(status)
-    setSelected((prev) => rows.find((e) => e.id === prev?.id) || rows[0] || null)
+    setSelected((prev) => visible.find((e) => e.id === prev?.id) || visible[0] || null)
   }
 
   useEffect(() => {

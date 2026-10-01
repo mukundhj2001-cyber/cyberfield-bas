@@ -41,17 +41,33 @@ for e in rows:
     intents.add(intent)
     biz = e.get("business_relevant", True)
     assert biz is True or biz == 1, f"non-business leaked into inbox: {e['subject']}"
+    assert (e.get("status") or "") != "ignored", f"ignored leaked into inbox: {e['subject']}"
     sa = (e.get("suggested_action") or {}).get("label") or "-"
     print(f"  {label:8} {score:5.1f}  [{intent:22}] {e['subject'][:50]}  → {sa[:40]}")
     low = (e.get("subject") or "").lower()
     assert "newsletter" not in low and "reddit" not in low and "linkedin" not in low, (
         f"noise subject in inbox: {e['subject']}"
     )
+    assert "bse alert" not in low and "unstop" not in low and "naukri" not in low, (
+        f"financial/job promo leaked into inbox: {e['subject']}"
+    )
 scores = [float(e.get("attention_score") or 0) for e in rows]
 assert scores == sorted(scores, reverse=True), "emails not sorted by attention desc"
 assert len(intents) >= 2, f"expected diverse intents, got {intents}"
 print("OK: attention sort + multi-intent inbox; intents:", ", ".join(sorted(intents)))
 PY
+
+echo "== debug include_ignored (optional) =="
+curl -s "$API/emails?include_ignored=true&include_non_business=true&sort=id" -o /tmp/bas_emails_all.json
+python3 - <<'PYDBG'
+import json
+all_rows = json.load(open("/tmp/bas_emails_all.json"))
+biz = json.load(open("/tmp/bas_emails.json"))
+ignored = [e for e in all_rows if (e.get("status") or "") == "ignored"]
+nonbiz = [e for e in all_rows if not e.get("business_relevant", True)]
+print(f"default inbox={len(biz)} debug_all={len(all_rows)} ignored={len(ignored)} non_business={len(nonbiz)}")
+print("OK: include_ignored/include_non_business debug query works")
+PYDBG
 
 echo "== seed diversity via n8n ingest (idempotent) =="
 for payload in \

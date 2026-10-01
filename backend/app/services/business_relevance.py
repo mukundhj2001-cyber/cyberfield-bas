@@ -5,7 +5,8 @@ only when a real provider is already configured and BUSINESS_FILTER_USE_LLM=1
 — borderline messages only; never required for demos.
 
 Prefer *not* importing noise: require clear B2B/ops signals, and veto social /
-newsletter / digest / marketing chrome aggressively.
+newsletter / digest / marketing / financial-alert / job-promo chrome aggressively
+(BSE/NSE alerts, Unstop, Naukri, etc.).
 """
 
 from __future__ import annotations
@@ -66,7 +67,9 @@ NEGATIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
         r"@redditmail\.com\b|@linkedin\.com\b|@facebookmail\.com\b|@x\.com\b|"
         r"@substack\.com\b|@medium\.com\b|@mail\.medium\.com\b|"
         r"@github\.com\b|@notifications\.github\.com\b|"
-        r"@email\.beehiiv\.com\b|@convertkit\.com\b|@mailchimp\.com\b",
+        r"@email\.beehiiv\.com\b|@convertkit\.com\b|@mailchimp\.com\b|"
+        r"@bseindia\.com\b|@nseindia\.com\b|@unstop\.com\b|"
+        r"@dare2compete\.com\b|@naukri\.com\b|@indeed\.com\b",
         re.I,
     ), 34, "social/bulk sender"),
     (re.compile(r"\b(industry[- ]?weekly|media\s+digest|news\s+roundup|top\s+stories|trending\s+(now|posts?))\b", re.I), 26, "news roundup"),
@@ -78,6 +81,24 @@ NEGATIVE_PATTERNS: list[tuple[re.Pattern[str], int, str]] = [
     (re.compile(r"\b(list[- ]?unsubscribe|bulk\s+mail|mass\s+email)\b", re.I), 20, "bulk list"),
     (re.compile(r"\b(coupon|deal\s+of\s+the\s+day|shop\s+now|free\s+shipping\s+on\s+orders)\b", re.I), 22, "retail promo"),
     (re.compile(r"\b(r/[a-z0-9_]+)\b", re.I), 30, "subreddit"),
+    # Financial market / exchange alerts (not B2B ops)
+    (re.compile(r"\bBSE\s*ALERTS?\b|\bBSE\s*India\b|\bBSE\s*Limited\b", re.I), 36, "BSE alerts"),
+    (re.compile(r"\bNSE\s*(ALERTS?|India)\b|\bNational\s+Stock\s+Exchange\b", re.I), 34, "NSE alerts"),
+    (re.compile(
+        r"\b(stock\s+market\s+alert|market\s+alert|equity\s+alert|sensex|nifty\s*50|"
+        r"corporate\s+action\s+alert|scrip\s+code|isin\s*[:=])\b",
+        re.I,
+    ), 32, "market/financial alert"),
+    (re.compile(r"\b(trading\s+alert|price\s+alert|portfolio\s+alert|brokerage\s+alert)\b", re.I), 28, "trading alert"),
+    # Job boards / career promo (Unstop, Naukri, etc.)
+    (re.compile(r"\b(unstop|dare2compete|team\s+unstop)\b", re.I), 36, "Unstop/job promo"),
+    (re.compile(
+        r"\b(naukri|indeed\.com|glassdoor|linkedin\s+jobs|hire\s+with\s+us|"
+        r"internship\s+alert|hackathon\s+(alert|invite|promo)|job\s+alert|"
+        r"career\s+(opportunity|digest|newsletter)|hiring\s+challenge)\b",
+        re.I,
+    ), 30, "job board/career promo"),
+    (re.compile(r"\b(apply\s+now\s+for\s+(this\s+)?(role|internship|hackathon)|new\s+opportunities\s+for\s+you)\b", re.I), 24, "career CTA"),
 ]
 
 NOISE_SENDER_RE = re.compile(
@@ -109,6 +130,20 @@ HARD_NOISE_DOMAINS: set[str] = {
     "amazonses.com",
     "pinterest.com",
     "tiktok.com",
+    # Financial exchange / brokerage alerts
+    "bseindia.com",
+    "alerts.bseindia.com",
+    "nseindia.com",
+    "alerts.nseindia.com",
+    # Job / career promo platforms
+    "unstop.com",
+    "mail.unstop.com",
+    "emails.unstop.com",
+    "dare2compete.com",
+    "naukri.com",
+    "email.naukri.com",
+    "indeed.com",
+    "glassdoor.com",
 }
 
 # Require clearer B2B signal than before (was 12 / soft pos>0 path)
@@ -343,10 +378,13 @@ def reclassify_existing_emails(db: Any) -> dict[str, int]:
         email.business_relevant = verdict.is_business
         if verdict.is_business:
             marked_biz += 1
+            # Do not resurrect ignored rows automatically
         else:
             marked_non += 1
-            # Soft-hide: ignored status keeps attention UI clean for legacy noise
-            if was and (email.status or "") == "unread":
+            # Soft-hide: ignored status keeps attention UI + GET /emails clean for noise
+            # (prefer-not-import is the sync path; this cleans legacy / slipped rows)
+            st = (email.status or "").strip().lower()
+            if st in ("", "unread", "ignored") or was:
                 email.status = "ignored"
     db.commit()
     return {

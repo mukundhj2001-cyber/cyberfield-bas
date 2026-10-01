@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -26,10 +27,22 @@ def list_emails(
         default=False,
         description="When true, include messages marked non-business (default inbox hides them)",
     ),
+    include_ignored: bool = Query(
+        default=False,
+        description="Debug only: when true, include status=ignored rows (default Inbox hides them)",
+    ),
 ):
+    """Default Inbox: business-relevant only, and never status=ignored.
+
+    Use ?include_ignored=true and/or ?include_non_business=true for debug dumps.
+    The Inbox UI never passes these flags.
+    """
     q = db.query(Email)
     if not include_non_business:
         q = q.filter(Email.business_relevant.is_(True))
+    if not include_ignored:
+        # Soft-hidden noise + manually ignored — gone from default Inbox
+        q = q.filter(or_(Email.status.is_(None), Email.status != "ignored"))
     if priority:
         q = q.filter(Email.attention_label.ilike(priority.strip()))
     if sort == "received":

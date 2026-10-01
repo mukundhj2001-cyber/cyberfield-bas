@@ -13,16 +13,19 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/stats", response_model=DashboardStats)
 def stats(db: Session = Depends(get_db)):
     recent = db.query(ActivityLog).order_by(ActivityLog.id.desc()).limit(16).all()
+    from sqlalchemy import or_
+
     biz = Email.business_relevant.is_(True)
-    emails = db.query(Email).filter(biz).all()
+    not_ignored = or_(Email.status.is_(None), Email.status != "ignored")
+    emails = db.query(Email).filter(biz, not_ignored).all()
     by_intent: dict[str, int] = {}
     for e in emails:
         key = e.intent or "unclassified"
         by_intent[key] = by_intent.get(key, 0) + 1
 
     pipeline = {
-        "inbox_unread": db.query(Email).filter(biz, Email.status == "unread").count(),
-        "action_staged": db.query(Email).filter(biz, Email.status == "action_staged").count(),
+        "inbox_unread": db.query(Email).filter(biz, not_ignored, Email.status == "unread").count(),
+        "action_staged": db.query(Email).filter(biz, not_ignored, Email.status == "action_staged").count(),
         "approvals_pending": db.query(Approval).filter(Approval.status == "pending").count(),
         "approvals_approved": db.query(Approval).filter(Approval.status == "approved").count(),
         "tickets_open": db.query(Ticket).filter(Ticket.status.in_(["open", "in_progress", "escalated"])).count(),

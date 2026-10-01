@@ -32,7 +32,9 @@ GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GMAIL_LIST_QUERY = (
     "in:inbox -category:promotions -category:social "
     "-from:redditmail.com -from:linkedin.com -from:substack.com "
-    "-from:medium.com -from:mail.medium.com -from:notifications.github.com"
+    "-from:medium.com -from:mail.medium.com -from:notifications.github.com "
+    "-from:bseindia.com -from:nseindia.com -from:unstop.com "
+    "-from:dare2compete.com -from:naukri.com -from:indeed.com"
 )
 _MOCK_NOW = datetime.now(timezone.utc)
 
@@ -240,6 +242,30 @@ MOCK_GMAIL_POOL: list[dict[str, Any]] = [
         "subject": "This week in industrial supply — newsletter",
         "body": "Your daily digest / morning brief. Unsubscribe anytime.",
         "received_at": _MOCK_NOW - timedelta(hours=9),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-bse",
+        "from_address": "alerts@bseindia.com",
+        "from_name": "BSE ALERTS",
+        "subject": "BSE ALERTS: Corporate Action — Scrip Code 500325",
+        "body": (
+            "BSE India market alert. Sensex update and equity corporate action notice. "
+            "Stock exchange notification only. Unsubscribe / manage preferences."
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=1, minutes=20),
+        "expect_filtered": True,
+    },
+    {
+        "message_id": "gmail-mock-noise-unstop",
+        "from_address": "team@unstop.com",
+        "from_name": "Team Unstop",
+        "subject": "Team Unstop — new hackathon & internship opportunities for you",
+        "body": (
+            "Hi! Apply now for this internship / hiring challenge on Unstop (formerly Dare2Compete). "
+            "Career digest with job alerts. Promo — limited-time offer to register. Unsubscribe anytime."
+        ),
+        "received_at": _MOCK_NOW - timedelta(hours=2, minutes=10),
         "expect_filtered": True,
     },
 ]

@@ -470,6 +470,7 @@ def _load_email(
         email = (
             q.filter(Email.status.in_(["unread", "action_staged"]))
             .filter(Email.business_relevant.is_(True))
+            .filter(Email.status != "ignored")
             .order_by(Email.attention_score.desc(), Email.id.asc())
             .first()
         )
